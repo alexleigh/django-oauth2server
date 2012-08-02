@@ -1,7 +1,4 @@
-#-*- coding: utf-8 -*-
-
 import functools, inspect
-
 
 def decorator(func):
     """ Allow to use decorator either with arguments or not. 
@@ -32,7 +29,6 @@ def decorator(func):
         return functor
 
     return func_wrapper
-
 
 @decorator
 def authenticate(func, *args, **kw):

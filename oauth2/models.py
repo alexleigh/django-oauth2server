@@ -1,19 +1,14 @@
-#-*- coding: utf-8 -*-
-
-
-"""OAuth 2.0 Django Models"""
-
-
 import time
 from hashlib import sha512
 from uuid import uuid4
+
 from django.db import models
 from django.contrib.auth.models import User
-from .consts import CLIENT_KEY_LENGTH, CLIENT_SECRET_LENGTH
-from .consts import ACCESS_TOKEN_LENGTH, REFRESH_TOKEN_LENGTH
-from .consts import ACCESS_TOKEN_EXPIRATION, MAC_KEY_LENGTH, REFRESHABLE
-from .consts import CODE_KEY_LENGTH, CODE_EXPIRATION
 
+from .settings import CLIENT_KEY_LENGTH, CLIENT_SECRET_LENGTH
+from .settings import ACCESS_TOKEN_LENGTH, REFRESH_TOKEN_LENGTH
+from .settings import ACCESS_TOKEN_EXPIRATION, MAC_KEY_LENGTH, REFRESHABLE
+from .settings import CODE_KEY_LENGTH, CODE_EXPIRATION
 
 class TimestampGenerator(object):
     """Callable Timestamp Generator that returns a UNIX time integer.
@@ -31,7 +26,6 @@ class TimestampGenerator(object):
     def __call__(self):
         return int(time.time()) + self.seconds
 
-
 class KeyGenerator(object):
     """Callable Key Generator that returns a random keystring.
 
@@ -47,9 +41,9 @@ class KeyGenerator(object):
     def __call__(self):
         return sha512(uuid4().hex).hexdigest()[0:self.length]
 
-
 class Client(models.Model):
-    """Stores client authentication data.
+    """
+    Stores client authentication data.
 
     **Args:**
 
@@ -67,8 +61,8 @@ class Client(models.Model):
       random string*
     * *redirect_uri:* A string representing the client redirect_uri.
       *Default None*
-
     """
+    
     name = models.CharField(max_length=256)
     user = models.ForeignKey(User)
     description = models.TextField(null=True, blank=True)
@@ -82,7 +76,6 @@ class Client(models.Model):
         max_length=CLIENT_SECRET_LENGTH,
         default=KeyGenerator(CLIENT_SECRET_LENGTH))
     redirect_uri = models.URLField(null=True)
-
 
 class AccessRange(models.Model):
     """Stores access range data, also known as scope.
@@ -100,7 +93,6 @@ class AccessRange(models.Model):
     """
     key = models.CharField(unique=True, max_length=255, db_index=True)
     description = models.TextField(blank=True)
-
 
 class AccessToken(models.Model):
     """Stores access token data.
@@ -152,7 +144,6 @@ class AccessToken(models.Model):
     scope = models.ManyToManyField(AccessRange)
     refreshable = models.BooleanField(default=REFRESHABLE)
 
-
 class Code(models.Model):
     """Stores authorization code data.
 
@@ -186,7 +177,6 @@ class Code(models.Model):
         default=TimestampGenerator(CODE_EXPIRATION))
     redirect_uri = models.URLField(null=True)
     scope = models.ManyToManyField(AccessRange)
-
 
 class MACNonce(models.Model):
     """Stores Nonce strings for use with MAC Authentication.

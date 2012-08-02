@@ -1,0 +1,18 @@
+[
+    {
+        "pk": 1,
+        "model": "oauth2.accessrange",
+        "fields": {
+            "key": "user_info",
+            "description": "Read-only access to basic information about a single user."
+        }
+    },
+    {
+        "pk": 2,
+        "model": "oauth2.accessrange",
+        "fields": {
+            "key": "user_profile",
+            "description": "Read-only access to the profile of a single user."
+        }
+    }
+]

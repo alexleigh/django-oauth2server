@@ -1,22 +1,21 @@
-#-*- coding: utf-8 -*-
-
-
-"""OAuth 2.0 Authentication"""
-
-
+import logging
 from hashlib import sha256
 from urlparse import parse_qsl
 from json import dumps
+
 from django.conf import settings
 from django.http import HttpResponse
+
 from .exceptions import OAuth2Exception
 from .models import AccessToken, AccessRange, TimestampGenerator
-from .consts import REALM, AUTHENTICATION_METHOD, MAC, BEARER
+from .constants import MAC, BEARER
+from .settings import REALM, AUTHENTICATION_METHOD
+
+log = logging.getLogger(__name__)
 
 class AuthenticationException(OAuth2Exception):
     """Authentication exception base class."""
     pass
-
 
 class InvalidRequest(AuthenticationException):
     """The request is missing a required parameter, includes an
@@ -25,12 +24,10 @@ class InvalidRequest(AuthenticationException):
     token, or is otherwise malformed."""
     error = 'invalid_request'
 
-
 class InvalidToken(AuthenticationException):
     """The access token provided is expired, revoked, malformed, or
     invalid for other reasons."""
     error = 'invalid_token'
-
 
 class InsufficientScope(AuthenticationException):
     """The request requires higher privileges than provided by the
@@ -47,14 +44,13 @@ class Authenticator(object):
 
     **Kwargs:**
 
-    * *scope:* An iterable of oauth2app.models.AccessRange objects representing
+    * *scope:* An iterable of oauth2.models.AccessRange objects representing
       the scope the authenticator will authenticate.
       *Default None*
     * *authentication_method:* Accepted authentication methods. Possible
-      values are: oauth2app.consts.MAC, oauth2app.consts.BEARER, 
-      oauth2app.consts.MAC | oauth2app.consts.BEARER, 
-      *Default oauth2app.consts.BEARER*
-
+      values are: oauth2.constants.MAC, oauth2.constants.BEARER, 
+      oauth2.constants.MAC | oauth2.constants.BEARER, 
+      *Default oauth2.constants.BEARER*
     """
 
     valid = False
@@ -67,12 +63,14 @@ class Authenticator(object):
     def __init__(
             self, 
             scope=None, 
-            authentication_method=AUTHENTICATION_METHOD):         
+            authentication_method=AUTHENTICATION_METHOD
+        ):
         if authentication_method not in [BEARER, MAC, BEARER | MAC]:
-            raise OAuth2Exception("Possible values for authentication_method" 
-                " are oauth2app.consts.MAC, oauth2app.consts.BEARER, "
-                "oauth2app.consts.MAC | oauth2app.consts.BEARER")
+            raise OAuth2Exception("Possible values for authentication_method " 
+                "are oauth2.constants.MAC, oauth2.constants.BEARER, "
+                "oauth2.constants.MAC | oauth2.constants.BEARER")
         self.authentication_method = authentication_method
+        
         if scope is None:
             self.authorized_scope = None
         elif isinstance(scope, AccessRange):
@@ -88,15 +86,25 @@ class Authenticator(object):
 
         * *request:* Django HttpRequest object.
 
-        *Returns None*"""
+        *Returns None*
+        """
+        
         self.request = request
-        self.bearer_token = request.REQUEST.get('bearer_token')
-        if "HTTP_AUTHORIZATION" in self.request.META:
-            auth = self.request.META["HTTP_AUTHORIZATION"].split()
+        
+        if 'HTTP_AUTHORIZATION' in self.request.META:
+            auth = self.request.META['HTTP_AUTHORIZATION'].split()
             self.auth_type = auth[0].lower()
-            self.auth_value = " ".join(auth[1:]).strip()
-        self.request_hostname = self.request.META.get("REMOTE_HOST")
-        self.request_port = self.request.META.get("SERVER_PORT")
+            self.auth_value = ' '.join(auth[1:]).strip()
+            
+        if self.auth_type not in ['bearer', 'mac']:
+            access_token = request.REQUEST.get('access_token')
+            if access_token is not None:
+                self.auth_type = 'bearer'
+                self.auth_value = access_token
+        
+        self.request_hostname = self.request.META.get('REMOTE_HOST')
+        self.request_port = self.request.META.get('SERVER_PORT')
+        
         try:
             self._validate()
         except AuthenticationException as e:
@@ -106,46 +114,52 @@ class Authenticator(object):
 
     def _validate(self):
         """Validate the request."""
-        # Check for Bearer or Mac authorization
-        if self.auth_type in ["bearer", "mac"]:
+        
+        if self.auth_type in ['bearer', 'mac']:
             self.attempted_validation = True
-            if self.auth_type == "bearer":
+            
+            if self.auth_type == 'bearer':
                 self._validate_bearer(self.auth_value)
-            elif self.auth_type == "mac":
+            
+            elif self.auth_type == 'mac':
                 self._validate_mac(self.auth_value)
+            
             self.valid = True
-        # Check for posted/paramaterized bearer token.
-        elif self.bearer_token is not None:
-            self.attempted_validation = True
-            self._validate_bearer(self.bearer_token)
-            self.valid = True
-            return
+
         else:
-            raise InvalidRequest("Request authentication failed, no "
-                "authentication credentials provided.")
+            raise InvalidRequest('Request authentication failed, no '
+                'authentication credentials provided.')
+        
         if self.authorized_scope is not None:
             token_scope = set([x.key for x in self.access_token.scope.all()])
             new_scope = self.authorized_scope - token_scope
+            
             if len(new_scope) > 0:
-                raise InsufficientScope(("Access token has insufficient "
-                    "scope: %s") % ','.join(self.authorized_scope))
+                raise InsufficientScope(('Access token has insufficient '
+                    'scope: %s') % ','.join(self.authorized_scope))
+        
         now = TimestampGenerator()()
         if self.access_token.expire < now:
-            raise InvalidToken("Token is expired")
+            raise InvalidToken('Token is expired')
 
     def _validate_bearer(self, token):
         """Validate Bearer token."""
+        
         if self.authentication_method & BEARER == 0:
-            raise InvalidToken("Bearer authentication is not supported.")
+            raise InvalidToken('Bearer authentication is not supported.')
+
         try:
             self.access_token = AccessToken.objects.get(token=token)
+        
         except AccessToken.DoesNotExist:
-            raise InvalidToken("Token doesn't exist")
+            raise InvalidToken('Token doesn\'t exist')
 
     def _validate_mac(self, mac_header):
         """Validate MAC authentication. Not implemented."""
+        
         if self.authentication_method & MAC == 0:
             raise InvalidToken("MAC authentication is not supported.")
+        
         mac_header = parse_qsl(mac_header.replace(",","&").replace('"', ''))
         mac_header = dict([(x[0].strip(), x[1].strip()) for x in mac_header])
         for parameter in ["id", "nonce", "mac"]:
@@ -172,7 +186,9 @@ class Authenticator(object):
             self.request_hostname, # The hostname included in the HTTP request
             self.request_port, # The port as included in the HTTP request
             bodyhash,
-            ext])).hexdigest()
+            ext
+        ])).hexdigest()
+        log.debug('%s %s %s' % (nonce_timestamp, nonce_string, mac))
         raise NotImplementedError()
 
         # Todo:
@@ -186,15 +202,16 @@ class Authenticator(object):
         # the determination of staleness is left up to the server to
         # define).
         # 3.  Verify the scope and validity of the MAC credentials.
-        
 
     def _get_user(self):
         """The user associated with the valid access token.
 
         *django.auth.User object*"""
+        
         if not self.valid:
             raise UnvalidatedRequest("This request is invalid or has not "
                 "been validated.")
+        
         return self.access_token.user
 
     user = property(_get_user)
@@ -224,26 +241,29 @@ class Authenticator(object):
     def error_response(self,
             content='',
             mimetype=None,
-            content_type=settings.DEFAULT_CONTENT_TYPE):
+            content_type=settings.DEFAULT_CONTENT_TYPE
+        ):
         """Error response generator. Returns a Django HttpResponse with status
-        401 and the approproate headers set. See Django documentation for details.
-        https://docs.djangoproject.com/en/dev/ref/request-response/#django.http.HttpResponse.__init__
+        401 and the appropriate headers set. See Django documentation for details.
 
         **Kwargs:**
 
         * *content:* See Django docs. *Default ''*
         * *mimetype:* See Django docs. *Default None*
         * *content_type:* See Django docs. *Default DEFAULT_CONTENT_TYPE*
-
         """
+        
         response = HttpResponse(
             content=content,
             mimetype=mimetype,
-            content_type=content_type)
+            content_type=content_type
+        )
+        
         if not self.attempted_validation:
             response['WWW-Authenticate'] = 'Bearer realm="%s"' % REALM
             response.status_code = 401
             return response
+
         else:
             if self.error is not None:
                 error = getattr(self.error, "error", "invalid_request")
@@ -267,10 +287,9 @@ class Authenticator(object):
             response['WWW-Authenticate'] = ', '.join(header)
             return response
 
-
 class JSONAuthenticator(Authenticator):
     """Wraps Authenticator, adds support for a callback parameter and
-    JSON related. convenience methods.
+    JSON related convenience methods.
 
     **Args:**
 

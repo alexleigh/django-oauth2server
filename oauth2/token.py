@@ -1,32 +1,25 @@
-#-*- coding: utf-8 -*-
-
-
-"""OAuth 2.0 Token Generation"""
-
-
 from base64 import b64encode
+from json import dumps
+
 from django.http import HttpResponse
 from django.contrib.auth import authenticate
 from django.views.decorators.csrf import csrf_exempt
-from json import dumps
+
 from .exceptions import OAuth2Exception
-from .consts import ACCESS_TOKEN_EXPIRATION, REFRESH_TOKEN_LENGTH, ACCESS_TOKEN_LENGTH
-from .consts import AUTHENTICATION_METHOD, MAC, BEARER, MAC_KEY_LENGTH
-from .consts import REFRESHABLE
+from .constants import MAC, BEARER
+from .settings import ACCESS_TOKEN_EXPIRATION, ACCESS_TOKEN_LENGTH, REFRESH_TOKEN_LENGTH
+from .settings import AUTHENTICATION_METHOD, MAC_KEY_LENGTH, REFRESHABLE
 from .lib.uri import normalize
 from .models import Client, AccessRange, Code, AccessToken, TimestampGenerator
 from .models import KeyGenerator
-
 
 class AccessTokenException(OAuth2Exception):
     """Access Token exception base class."""
     pass
 
-
 class UnvalidatedRequest(OAuth2Exception):
     """The method requested requires a validated request to continue."""
     pass
-
 
 class InvalidRequest(AccessTokenException):
     """The request is missing a required parameter, includes an
@@ -36,19 +29,16 @@ class InvalidRequest(AccessTokenException):
     otherwise malformed."""
     error = 'invalid_request'
 
-
 class InvalidClient(AccessTokenException):
     """Client authentication failed (e.g. unknown client, no
     client credentials included, multiple client credentials
     included, or unsupported credentials type)."""
     error = 'invalid_client'
 
-
 class UnauthorizedClient(AccessTokenException):
     """The client is not authorized to request an authorization
     code using this method."""
     error = 'unauthorized_client'
-
 
 class InvalidGrant(AccessTokenException):
     """The provided authorization grant is invalid, expired,
@@ -56,30 +46,15 @@ class InvalidGrant(AccessTokenException):
     authorization request, or was issued to another client."""
     error = 'invalid_grant'
 
-
 class UnsupportedGrantType(AccessTokenException):
     """The authorization grant type is not supported by the
     authorization server."""
     error = 'unsupported_grant_type'
 
-
 class InvalidScope(AccessTokenException):
     """The requested scope is invalid, unknown, malformed, or
     exceeds the scope granted by the resource owner."""
     error = 'invalid_scope'
-
-
-@csrf_exempt
-def handler(request):
-    """Token access handler. Conveneince function that wraps the Handler()
-    callable.
-
-    **Args:**
-
-    * *request:* Django HttpRequest object.
-    """
-    return TokenGenerator()(request)
-
 
 class TokenGenerator(object):
     """Token access handler. Validates authorization codes, refresh tokens,
@@ -94,8 +69,8 @@ class TokenGenerator(object):
     * *scope:* An iterable of oauth2app.models.AccessRange objects representing
       the scope the token generator will grant. *Default None*
     * *authentication_method:* Type of token to generate. Possible
-      values are: oauth2app.consts.MAC and oauth2app.consts.BEARER
-      *Default oauth2app.consts.BEARER*
+      values are: oauth2.constants.MAC and oauth2.constants.BEARER
+      *Default oauth2.constants.BEARER*
     * *refreshable:* Boolean value indicating whether issued tokens are
       refreshable. *Default True*
     """
@@ -112,11 +87,12 @@ class TokenGenerator(object):
             self,
             scope=None,
             authentication_method=AUTHENTICATION_METHOD,
-            refreshable=REFRESHABLE):
+            refreshable=REFRESHABLE
+        ):
         self.refreshable = refreshable
         if authentication_method not in [BEARER, MAC]:
             raise OAuth2Exception("Possible values for authentication_method"
-                " are oauth2app.consts.MAC and oauth2app.consts.BEARER")
+                " are oauth2.constants.MAC and oauth2.constants.BEARER")
         self.authentication_method = authentication_method
         if scope is None:
             self.authorized_scope = None
