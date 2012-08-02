@@ -61,7 +61,7 @@ RESPONSE_TYPES = {
     'token': TOKEN
 }
 
-class Authorizer(object):
+class Validator(object):
     """Access authorizer. Validates access credentials and generates
     a response with an authorization code passed as a parameter to the
     redirect URI, an access token passed as a URI fragment to the redirect
@@ -69,7 +69,7 @@ class Authorizer(object):
 
     **Kwargs:**
 
-    * *scope:* An iterable of oauth2app.models.AccessRange objects representing
+    * *scope:* An iterable of oauth2.models.AccessRange objects representing
       the scope the authorizer can grant. *Default None*
     * *authentication_method:* Type of token to generate. Possible
       values are: oauth2app.consts.MAC and oauth2app.consts.BEARER

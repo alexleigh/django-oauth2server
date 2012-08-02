@@ -6,15 +6,15 @@ from django.shortcuts import render_to_response
 from django.contrib.auth.decorators import login_required
 from django.views.decorators.csrf import csrf_exempt
 
-from .authorization import Authorizer, MissingRedirectURI, AuthorizationException
-from .token import TokenGenerator
+from .validator import Validator, MissingRedirectURI, AuthorizationException
+from .token_generator import TokenGenerator
 from .forms import AuthorizationForm
 
 log = logging.getLogger(__name__)
 
 @login_required
 def authorize(request):
-    authorizer = Authorizer()
+    authorizer = Validator()
     
     try:
         authorizer.validate(request)

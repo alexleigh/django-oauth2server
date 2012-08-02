@@ -1,10 +1,3 @@
-'''
-oauth2/api.py
-Created on Aug 1, 2012
-
-@author: Alex Leigh
-'''
-
 import logging
 
 from tastypie.authorization import Authorization

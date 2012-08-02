@@ -1,48 +1,17 @@
-import time
-from hashlib import sha512
-from uuid import uuid4
-
 from django.db import models
 from django.contrib.auth.models import User
+from django.contrib.contenttypes import generic
+from django.contrib.contenttypes.models import ContentType
+from model_utils import Choices
 
-from .settings import CLIENT_KEY_LENGTH, CLIENT_SECRET_LENGTH
+from .utils import KeyGenerator, TimestampGenerator
+from .settings import CLIENT_KEY_LENGTH, CLIENT_SECRET_LENGTH, SCOPE_LENGTH
 from .settings import ACCESS_TOKEN_LENGTH, REFRESH_TOKEN_LENGTH
 from .settings import ACCESS_TOKEN_EXPIRATION, MAC_KEY_LENGTH, REFRESHABLE
 from .settings import CODE_KEY_LENGTH, CODE_EXPIRATION
 
-class TimestampGenerator(object):
-    """Callable Timestamp Generator that returns a UNIX time integer.
-
-    **Kwargs:**
-
-    * *seconds:* A integer indicating how many seconds in the future the
-      timestamp should be. *Default 0*
-
-    *Returns int*
-    """
-    def __init__(self, seconds=0):
-        self.seconds = seconds
-
-    def __call__(self):
-        return int(time.time()) + self.seconds
-
-class KeyGenerator(object):
-    """Callable Key Generator that returns a random keystring.
-
-    **Args:**
-
-    * *length:* A integer indicating how long the key should be.
-
-    *Returns str*
-    """
-    def __init__(self, length):
-        self.length = length
-
-    def __call__(self):
-        return sha512(uuid4().hex).hexdigest()[0:self.length]
-
 class Client(models.Model):
-    """
+    '''
     Stores client authentication data.
 
     **Args:**
@@ -61,38 +30,59 @@ class Client(models.Model):
       random string*
     * *redirect_uri:* A string representing the client redirect_uri.
       *Default None*
-    """
+    '''
     
     name = models.CharField(max_length=256)
-    user = models.ForeignKey(User)
     description = models.TextField(null=True, blank=True)
+    
+    CLIENT_TYPE = Choices(
+        ('web', 'Web application'),
+        ('installed', 'Installed application'),
+        ('service', 'Service account'),
+    )
+    client_type = models.CharField(max_length=20, choices=CLIENT_TYPE)
+    
     key = models.CharField(
         unique=True,
         max_length=CLIENT_KEY_LENGTH,
         default=KeyGenerator(CLIENT_KEY_LENGTH),
-        db_index=True)
+        db_index=True
+    )
+    
     secret = models.CharField(
         unique=True,
         max_length=CLIENT_SECRET_LENGTH,
-        default=KeyGenerator(CLIENT_SECRET_LENGTH))
+        default=KeyGenerator(CLIENT_SECRET_LENGTH)
+    )
+    
     redirect_uri = models.URLField(null=True)
+    
+    user = models.ForeignKey(User, null=True, blank=True)
 
-class AccessRange(models.Model):
-    """Stores access range data, also known as scope.
+class ProtectedResource(models.Model):
+    '''
+    Stores information about resources protected by OAuth2 and the scopes
+    needed to access the resources.
 
     **Args:**
 
-    * *key:* A string representing the access range scope. Used in access
-      token requests.
+    * *scope:* A string representing the OAuth2 scope needed to access the
+       resource. Used in access token requests and validation
 
     **Kwargs:**
 
     * *description:* A string representing the access range description.
       *Default None*
-
-    """
-    key = models.CharField(unique=True, max_length=255, db_index=True)
+    '''
+    
+    content_type = models.ForeignKey(ContentType)
+    object_id = models.PositiveIntegerField(null=True, blank=True)
+    object = generic.GenericForeignKey('content_type', 'object_id')
+    
+    scope = models.CharField(unique=True, max_length=SCOPE_LENGTH, db_index=True)
     description = models.TextField(blank=True)
+    requires_user = models.BooleanField(default=False)
+    
 
 class AccessToken(models.Model):
     """Stores access token data.
@@ -179,7 +169,7 @@ class Code(models.Model):
     scope = models.ManyToManyField(AccessRange)
 
 class MACNonce(models.Model):
-    """Stores Nonce strings for use with MAC Authentication.
+    """Stores nonce strings for use with MAC Authentication.
 
     **Args:**
 

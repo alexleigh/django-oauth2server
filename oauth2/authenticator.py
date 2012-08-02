@@ -7,7 +7,7 @@ from django.conf import settings
 from django.http import HttpResponse
 
 from .exceptions import OAuth2Exception
-from .models import AccessToken, AccessRange, TimestampGenerator
+from .models import AccessToken, ProtectedResource, TimestampGenerator
 from .constants import MAC, BEARER
 from .settings import REALM, AUTHENTICATION_METHOD
 
@@ -73,7 +73,7 @@ class Authenticator(object):
         
         if scope is None:
             self.authorized_scope = None
-        elif isinstance(scope, AccessRange):
+        elif isinstance(scope, ProtectedResource):
             self.authorized_scope = set([scope.key])
         else:
             self.authorized_scope = set([x.key for x in scope])
