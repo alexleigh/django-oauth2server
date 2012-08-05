@@ -82,7 +82,24 @@ class ProtectedResource(models.Model):
     scope = models.CharField(unique=True, max_length=SCOPE_LENGTH, db_index=True)
     description = models.TextField(blank=True)
     requires_user = models.BooleanField(default=False)
+
+class AccessRange(models.Model):
+    '''
+    Stores OAuth 2 scopes.
+
+    **Args:**
+
+    * *scope:* A string representing the OAuth2 scope needed to access the
+       resource. Used in access token requests and validation
+
+    **Kwargs:**
+
+    * *description:* A string representing the access range description.
+      *Default None*
+    '''
     
+    scope = models.CharField(unique=True, max_length=SCOPE_LENGTH, db_index=True)
+    description = models.TextField(blank=True)
 
 class AccessToken(models.Model):
     """Stores access token data.
