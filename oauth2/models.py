@@ -94,7 +94,7 @@ class Scope(models.Model):
 
     **Kwargs:**
 
-    * *description:* A string representing the access range description.
+    * *description:* A string representing the scope description.
       *Default None*
     '''
     

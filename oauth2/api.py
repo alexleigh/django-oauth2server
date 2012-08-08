@@ -1,13 +1,13 @@
 import logging
 
 from tastypie.authorization import Authorization
-from .models import AccessRange
-from .authenticator import JSONAuthenticator, AuthenticationException
+from .models import Scope
+from .validator import JSONValidator, ValidationException
 
 log = logging.getLogger(__name__)
 
 class OAuth2Authorization(Authorization):
-    def is_authorized(self, request, object=None):
+    def is_authorized(self, request):
         log.debug(object)
         # get the scope required to access the object
         scope = None
@@ -25,14 +25,14 @@ class OAuth2Authorization(Authorization):
                     object_class._meta.app_label,
                     object_class._meta.module_name
                 )
-                scope = AccessRange.objects.get(key=permission_code)
-            scope = AccessRange.objects.get(key='date_joined')
+                scope = Scope.objects.get(name=permission_code)
+            scope = Scope.objects.get(name='date_joined')
         
         # authenticate and authorize
-        authenticator = JSONAuthenticator(scope=scope)
+        validator = JSONValidator(scope=scope)
         log.debug(request.user)
         try:
-            authenticator.validate(request)
-        except AuthenticationException:
-            return authenticator.error_response()
+            validator.validate(request)
+        except ValidationException:
+            return validator.error_response()
         return True

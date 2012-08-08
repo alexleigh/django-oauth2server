@@ -32,14 +32,10 @@ def authorize(request):
         # Make sure the authorizer has validated before requesting the client or access_ranges as otherwise they will be None.
         form = AuthorizationForm()
         
-        # TODO: figure out if this is needed
-        form_action = '/oauth2/authorize/?%s' % authorizer.query_string
-        
         context = {
             'client': authorizer.client, 
             'access_ranges': authorizer.access_ranges,
             'form': form,
-            'form_action': form_action,
         }
         return render_to_response('oauth2/authorize.html', context, RequestContext(request))
     
@@ -59,11 +55,5 @@ def missing_redirect_uri(request):
 
 @csrf_exempt
 def token(request):
-    """
-    Token access handler. Convenience function that wraps the Handler() callable.
-
-    **Args:**
-
-    * *request:* Django HttpRequest object.
-    """
-    return TokenGenerator()(request)
+    token_generator = TokenGenerator()
+    return token_generator.validate(request)

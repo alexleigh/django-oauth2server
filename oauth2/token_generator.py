@@ -3,61 +3,75 @@ from json import dumps
 
 from django.http import HttpResponse
 from django.contrib.auth import authenticate
-from django.views.decorators.csrf import csrf_exempt
 
+from . import constants
+from . import settings
 from .exceptions import OAuth2Exception
-from .constants import MAC, BEARER
-from .settings import ACCESS_TOKEN_EXPIRATION, ACCESS_TOKEN_LENGTH, REFRESH_TOKEN_LENGTH
-from .settings import AUTHENTICATION_METHOD, MAC_KEY_LENGTH, REFRESHABLE
 from .lib.uri import normalize
-from .models import Client, AccessRange, Code, AccessToken, TimestampGenerator
-from .models import KeyGenerator
+from .models import Client, Scope, Code, AccessToken
+from .utils import KeyGenerator, TimestampGenerator
 
 class AccessTokenException(OAuth2Exception):
-    """Access Token exception base class."""
+    '''
+    Access Token exception base class.
+    '''
     pass
 
 class UnvalidatedRequest(OAuth2Exception):
-    """The method requested requires a validated request to continue."""
+    '''
+    The method requested requires a validated request to continue.
+    '''
     pass
 
 class InvalidRequest(AccessTokenException):
-    """The request is missing a required parameter, includes an
+    '''
+    The request is missing a required parameter, includes an
     unsupported parameter or parameter value, repeats a
     parameter, includes multiple credentials, utilizes more
     than one mechanism for authenticating the client, or is
-    otherwise malformed."""
+    otherwise malformed.
+    '''
     error = 'invalid_request'
 
 class InvalidClient(AccessTokenException):
-    """Client authentication failed (e.g. unknown client, no
+    '''
+    Client authentication failed (e.g. unknown client, no
     client credentials included, multiple client credentials
-    included, or unsupported credentials type)."""
+    included, or unsupported credentials type).
+    '''
     error = 'invalid_client'
 
 class UnauthorizedClient(AccessTokenException):
-    """The client is not authorized to request an authorization
-    code using this method."""
+    '''
+    The client is not authorized to request an authorization code using this
+    method.
+    '''
     error = 'unauthorized_client'
 
 class InvalidGrant(AccessTokenException):
-    """The provided authorization grant is invalid, expired,
+    '''
+    The provided authorization grant is invalid, expired,
     revoked, does not match the redirection URI used in the
-    authorization request, or was issued to another client."""
+    authorization request, or was issued to another client.
+    '''
     error = 'invalid_grant'
 
 class UnsupportedGrantType(AccessTokenException):
-    """The authorization grant type is not supported by the
-    authorization server."""
+    '''
+    The authorization grant type is not supported by the authorization server.
+    '''
     error = 'unsupported_grant_type'
 
 class InvalidScope(AccessTokenException):
-    """The requested scope is invalid, unknown, malformed, or
-    exceeds the scope granted by the resource owner."""
+    '''
+    The requested scope is invalid, unknown, malformed, or exceeds the scope
+    granted by the resource owner.
+    '''
     error = 'invalid_scope'
 
 class TokenGenerator(object):
-    """Token access handler. Validates authorization codes, refresh tokens,
+    '''
+    Token access handler. Validates authorization codes, refresh tokens,
     username/password pairs, and generates a JSON formatted authorization code.
 
     **Args:**
@@ -69,11 +83,10 @@ class TokenGenerator(object):
     * *scope:* An iterable of oauth2app.models.AccessRange objects representing
       the scope the token generator will grant. *Default None*
     * *authentication_method:* Type of token to generate. Possible
-      values are: oauth2.constants.MAC and oauth2.constants.BEARER
-      *Default oauth2.constants.BEARER*
+      values are: oauth2.constants.BEARER and oauth2.constants.MAC
     * *refreshable:* Boolean value indicating whether issued tokens are
-      refreshable. *Default True*
-    """
+      refreshable.
+    '''
 
     valid = False
     code = None
@@ -85,93 +98,85 @@ class TokenGenerator(object):
 
     def __init__(
             self,
-            scope=None,
-            authentication_method=AUTHENTICATION_METHOD,
-            refreshable=REFRESHABLE
+            authentication_method=settings.AUTHENTICATION_METHOD,
+            refreshable=settings.REFRESHABLE,
+            allowed_scope=None
         ):
         self.refreshable = refreshable
-        if authentication_method not in [BEARER, MAC]:
+        
+        if authentication_method not in [constants.BEARER, constants.MAC]:
             raise OAuth2Exception("Possible values for authentication_method"
                 " are oauth2.constants.MAC and oauth2.constants.BEARER")
         self.authentication_method = authentication_method
-        if scope is None:
-            self.authorized_scope = None
-        elif isinstance(scope, AccessRange):
-            self.authorized_scope = set([scope.key])
+        
+        if allowed_scope is None:
+            self.allowed_scope = None
+        elif isinstance(allowed_scope, Scope):
+            self.allowed_scope = set([allowed_scope.key])
         else:
-            self.authorized_scope = set([x.key for x in scope])
+            self.allowed_scope = set([x.key for x in allowed_scope])
 
-    @csrf_exempt
-    def __call__(self, request):
-        """Django view that handles the token endpoint. Returns a JSON formatted
-        authorization code.
+    def validate(self, request):
+        '''
+        Validate the request. Raises an AccessTokenException if the
+        request fails authorization.
 
-        **Args:**
-
-        * *request:* Django HttpRequest object.
-
-        """
+        *Returns None*
+        '''
+        
         self.grant_type = request.REQUEST.get('grant_type')
         self.client_id = request.REQUEST.get('client_id')
         self.client_secret = request.POST.get('client_secret')
         self.scope = request.REQUEST.get('scope')
         if self.scope is not None:
             self.scope = set(self.scope.split())
+        
         # authorization_code, see 4.1.3.  Access Token Request
         self.code_key = request.REQUEST.get('code')
         self.redirect_uri = request.REQUEST.get('redirect_uri')
+        
         # refresh_token, see 6.  Refreshing an Access Token
         self.refresh_token = request.REQUEST.get('refresh_token')
+        
         # password, see 4.3.2. Access Token Request
         self.email = request.REQUEST.get('email')
         self.username = request.REQUEST.get('username')
         self.password = request.REQUEST.get('password')
-        # Optional json callback
+        
+        # optional json callback
         self.callback = request.REQUEST.get('callback')
         self.request = request
-        try:
-            self.validate()
-        except AccessTokenException:
-            return self.error_response()
-        return self.grant_response()
-
-    def validate(self):
-        """Validate the request. Raises an AccessTokenException if the
-        request fails authorization.
-
-        *Returns None*"""
+        
         try:
             self._validate()
         except AccessTokenException as e:
             self.error = e
-            raise e
+            return self.error_response()
+        
         self.valid = True
+        return self.grant_response()
 
     def _validate(self):
-        """Validate the request."""
-        # Check response type
-        if self.grant_type is None:
-            raise InvalidRequest('No grant_type provided.')
-        if self.grant_type not in [
-                "authorization_code",
-                "refresh_token",
-                "password",
-                "client_credentials"]:
-            raise UnsupportedGrantType('No grant type: %s' % self.grant_type)
+        # check client
         if self.client_id is None:
             raise InvalidRequest('No client_id')
         try:
             self.client = Client.objects.get(key=self.client_id)
         except Client.DoesNotExist:
             raise InvalidClient("client_id %s doesn't exist" % self.client_id)
-        # Scope
+        
+        # check scope
         if self.scope is not None:
-            access_ranges = AccessRange.objects.filter(key__in=self.scope)
+            access_ranges = Scope.objects.filter(key__in=self.scope) # TODO: fix
             access_ranges = set(access_ranges.values_list('key', flat=True))
             difference = access_ranges.symmetric_difference(self.scope)
             if len(difference) != 0:
                 raise InvalidScope("Following access ranges doesn't exist: "
                     "%s" % ', '.join(difference))
+        
+        # check grant type
+        if self.grant_type is None:
+            raise InvalidRequest('No grant_type provided.')
         if self.grant_type == "authorization_code":
             self._validate_authorization_code()
         elif self.grant_type == "refresh_token":
@@ -181,7 +186,7 @@ class TokenGenerator(object):
         elif self.grant_type == "client_credentials":
             self._validate_client_credentials()
         else:
-            raise UnsupportedGrantType('Unable to validate grant type.')
+            raise UnsupportedGrantType('No grant type: %s' % self.grant_type)
 
     def _validate_access_credentials(self):
         """Validate the request's access credentials."""
@@ -226,14 +231,14 @@ class TokenGenerator(object):
         if self.password is None:
             raise InvalidRequest('No password')
         if self.scope is not None:
-            access_ranges = AccessRange.objects.filter(key__in=self.scope)
+            access_ranges = Scope.objects.filter(key__in=self.scope) # TODO: fix
             access_ranges = set(access_ranges.values_list('key', flat=True))
             difference = access_ranges.symmetric_difference(self.scope)
             if len(difference) != 0:
                 raise InvalidScope("""Following access ranges do not
                     exist: %s""" % ', '.join(difference))
-            if self.authorized_scope is not None:
-                new_scope = self.scope - self.authorized_scope
+            if self.allowed_scope is not None:
+                new_scope = self.scope - self.allowed_scope
                 if len(new_scope) > 0:
                     raise InvalidScope(
                         "Invalid scope request: %s" % ', '.join(new_scope))
@@ -320,12 +325,12 @@ class TokenGenerator(object):
             access_token = self._get_client_credentials_token()
         data = {
             'access_token': access_token.token,
-            'expires_in': ACCESS_TOKEN_EXPIRATION}
-        if self.authentication_method == MAC:
+            'expires_in': settings.ACCESS_TOKEN_EXPIRATION}
+        if self.authentication_method == constants.MAC:
             data["token_type"] = "mac"
             data["mac_key"] = access_token.mac_key
             data["mac_algorithm"] = "hmac-sha-256"
-        elif self.authentication_method == BEARER:
+        elif self.authentication_method == constants.BEARER:
             data["token_type"] = "bearer"
         if access_token.refreshable:
             data['refresh_token'] = access_token.refresh_token
@@ -346,9 +351,9 @@ class TokenGenerator(object):
             user=self.code.user,
             client=self.client,
             refreshable=self.refreshable)
-        if self.authentication_method == MAC:
-            access_token.mac_key = KeyGenerator(MAC_KEY_LENGTH)()
-        access_ranges = AccessRange.objects.filter(key__in=self.scope) if self.scope else []
+        if self.authentication_method == constants.MAC:
+            access_token.mac_key = KeyGenerator(settings.MAC_KEY_LENGTH)()
+        access_ranges = Scope.objects.filter(key__in=self.scope) if self.scope else [] # TODO: fix
         access_token.scope = access_ranges
         access_token.save()
         self.code.delete()
@@ -360,19 +365,19 @@ class TokenGenerator(object):
             user=self.user,
             client=self.client,
             refreshable=self.refreshable)
-        if self.authentication_method == MAC:
-            access_token.mac_key = KeyGenerator(MAC_KEY_LENGTH)()
-        access_ranges = AccessRange.objects.filter(key__in=self.scope) if self.scope else []
+        if self.authentication_method == constants.MAC:
+            access_token.mac_key = KeyGenerator(settings.MAC_KEY_LENGTH)()
+        access_ranges = Scope.objects.filter(key__in=self.scope) if self.scope else [] # TODO: fix
         access_token.scope = access_ranges
         access_token.save()
         return access_token
 
     def _get_refresh_token(self):
         """Generate an access token after refresh authorization."""
-        self.access_token.token = KeyGenerator(ACCESS_TOKEN_LENGTH)()
-        self.access_token.refresh_token = KeyGenerator(REFRESH_TOKEN_LENGTH)()
-        self.access_token.expire = TimestampGenerator(ACCESS_TOKEN_EXPIRATION)()
-        access_ranges = AccessRange.objects.filter(key__in=self.scope) if self.scope else []
+        self.access_token.token = KeyGenerator(settings.ACCESS_TOKEN_LENGTH)()
+        self.access_token.refresh_token = KeyGenerator(settings.REFRESH_TOKEN_LENGTH)()
+        self.access_token.expire = TimestampGenerator(settings.ACCESS_TOKEN_EXPIRATION)()
+        access_ranges = Scope.objects.filter(key__in=self.scope) if self.scope else [] # TODO: fix
         self.access_token.scope = access_ranges
         self.access_token.save()
         return self.access_token
@@ -383,9 +388,9 @@ class TokenGenerator(object):
             user=self.client.user,
             client=self.client,
             refreshable=self.refreshable)
-        if self.authentication_method == MAC:
-            access_token.mac_key = KeyGenerator(MAC_KEY_LENGTH)()
-        access_ranges = AccessRange.objects.filter(key__in=self.scope) if self.scope else []
+        if self.authentication_method == constants.MAC:
+            access_token.mac_key = KeyGenerator(settings.MAC_KEY_LENGTH)()
+        access_ranges = Scope.objects.filter(key__in=self.scope) if self.scope else [] # TODO: fix
         self.access_token.scope = access_ranges
         self.access_token.save()
         return self.access_token

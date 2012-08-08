@@ -3,14 +3,14 @@ from hashlib import sha256
 from urlparse import parse_qsl
 from json import dumps
 
-from django.conf import settings
+from django.conf import settings as django_settings
 from django.http import HttpResponse
 
+from . import constants
+from . import settings
 from .exceptions import OAuth2Exception
 from .models import AccessToken, Scope
 from .utils import TimestampGenerator
-from .constants import MAC, BEARER
-from .settings import REALM, AUTHENTICATION_METHOD
 
 log = logging.getLogger(__name__)
 
@@ -59,8 +59,8 @@ class Validator(object):
       the scope the authenticator will authenticate.
       *Default None*
     * *authentication_method:* Accepted authentication methods. Possible
-      values are: oauth2.constants.MAC, oauth2.constants.BEARER, 
-      oauth2.constants.MAC | oauth2.constants.BEARER, 
+      values are: oauth2.constants.BEARER, oauth2.constants.MAC, 
+      oauth2.constants.BEARER_AND_MAC
       *Default oauth2.constants.BEARER*
     '''
 
@@ -71,19 +71,65 @@ class Validator(object):
     error = None
     attempted_validation = False
 
-    def __init__(self, scope=None, authentication_method=AUTHENTICATION_METHOD):
-        if authentication_method not in [BEARER, MAC, BEARER | MAC]:
-            raise OAuth2Exception("Possible values for authentication_method " 
-                "are oauth2.constants.MAC, oauth2.constants.BEARER, "
-                "oauth2.constants.MAC | oauth2.constants.BEARER")
+    @property
+    def user(self):
+        '''
+        The user associated with the valid access token.
+
+        *django.auth.User object*
+        '''
+        
+        if not self.valid:
+            raise UnvalidatedRequest("This request is invalid or has not "
+                "been validated.")
+        
+        return self.access_token.user
+
+    @property
+    def scope(self):
+        '''
+        The client scope associated with the valid access token.
+
+        *QuerySet of AccessRange objects.*
+        '''
+        
+        if not self.valid:
+            raise UnvalidatedRequest("This request is invalid or has not "
+                "been validated.")
+        
+        return self.access_token.scope.all()
+    
+    @property
+    def client(self):
+        '''
+        The client associated with the valid access token.
+
+        *oauth2.models.Client object*
+        '''
+        
+        if not self.valid:
+            raise UnvalidatedRequest("This request is invalid or has not "
+                "been validated.")
+        
+        return self.access_token.client
+
+    def __init__(
+            self,
+            authentication_method=settings.AUTHENTICATION_METHOD,
+            allowed_scope=None
+        ):
+        if authentication_method not in [constants.BEARER, constants.MAC, constants.BEARER_AND_MAC]:
+            raise OAuth2Exception('Possible values for authentication_method '
+                'are oauth2.constants.BEARER, oauth2.constants.MAC, '
+                'oauth2.constants.BEARER_AND_MAC')
         self.authentication_method = authentication_method
         
-        if scope is None:
-            self.authorized_scope = None
-        elif isinstance(scope, Scope):
-            self.authorized_scope = set([scope.key])
+        if allowed_scope is None:
+            self.allowed_scope = None
+        elif isinstance(allowed_scope, Scope):
+            self.allowed_scope = set([allowed_scope.key])
         else:
-            self.authorized_scope = set([x.key for x in scope])
+            self.allowed_scope = set([x.key for x in allowed_scope])
 
     def validate(self, request):
         '''
@@ -121,8 +167,6 @@ class Validator(object):
         self.valid = True
 
     def _validate(self):
-        """Validate the request."""
-        
         if self.auth_type in ['bearer', 'mac']:
             self.attempted_validation = True
             
@@ -135,25 +179,26 @@ class Validator(object):
             self.valid = True
 
         else:
-            raise InvalidRequest('Request authentication failed, no '
-                'authentication credentials provided.')
+            raise InvalidRequest('Request authentication failed, no authentication credentials provided.')
         
-        if self.authorized_scope is not None:
+        if self.allowed_scope is not None:
             token_scope = set([x.key for x in self.access_token.scope.all()])
-            new_scope = self.authorized_scope - token_scope
+            new_scope = self.allowed_scope - token_scope
             
             if len(new_scope) > 0:
                 raise InsufficientScope(('Access token has insufficient '
-                    'scope: %s') % ','.join(self.authorized_scope))
+                    'scope: %s') % ','.join(self.allowed_scope))
         
         now = TimestampGenerator()()
         if self.access_token.expire < now:
             raise InvalidToken('Token is expired')
 
     def _validate_bearer(self, token):
-        """Validate Bearer token."""
+        '''
+        Validate Bearer token.
+        '''
         
-        if self.authentication_method & BEARER == 0:
+        if self.authentication_method & constants.BEARER == 0:
             raise InvalidToken('Bearer authentication is not supported.')
 
         try:
@@ -163,9 +208,11 @@ class Validator(object):
             raise InvalidToken('Token doesn\'t exist')
 
     def _validate_mac(self, mac_header):
-        """Validate MAC authentication. Not implemented."""
+        '''
+        Validate MAC authentication. Not implemented.
+        '''
         
-        if self.authentication_method & MAC == 0:
+        if self.authentication_method & constants.MAC == 0:
             raise InvalidToken("MAC authentication is not supported.")
         
         mac_header = parse_qsl(mac_header.replace(",","&").replace('"', ''))
@@ -211,47 +258,13 @@ class Validator(object):
         # define).
         # 3.  Verify the scope and validity of the MAC credentials.
 
-    def _get_user(self):
-        """The user associated with the valid access token.
-
-        *django.auth.User object*"""
-        
-        if not self.valid:
-            raise UnvalidatedRequest("This request is invalid or has not "
-                "been validated.")
-        
-        return self.access_token.user
-
-    user = property(_get_user)
-
-    def _get_scope(self):
-        """The client scope associated with the valid access token.
-
-        *QuerySet of AccessRange objects.*"""
-        if not self.valid:
-            raise UnvalidatedRequest("This request is invalid or has not "
-                "been validated.")
-        return self.access_token.scope.all()
-
-    scope = property(_get_scope)
-
-    def _get_client(self):
-        """The client associated with the valid access token.
-
-        *oauth2app.models.Client object*"""
-        if not self.valid:
-            raise UnvalidatedRequest("This request is invalid or has not "
-                "been validated.")
-        return self.access_token.client
-
-    client = property(_get_client)
-
     def error_response(self,
             content='',
             mimetype=None,
-            content_type=settings.DEFAULT_CONTENT_TYPE
+            content_type=django_settings.DEFAULT_CONTENT_TYPE
         ):
-        """Error response generator. Returns a Django HttpResponse with status
+        '''
+        Error response generator. Returns a Django HttpResponse with status
         401 and the appropriate headers set. See Django documentation for details.
 
         **Kwargs:**
@@ -259,7 +272,7 @@ class Validator(object):
         * *content:* See Django docs. *Default ''*
         * *mimetype:* See Django docs. *Default None*
         * *content_type:* See Django docs. *Default DEFAULT_CONTENT_TYPE*
-        """
+        '''
         
         response = HttpResponse(
             content=content,
@@ -268,7 +281,7 @@ class Validator(object):
         )
         
         if not self.attempted_validation:
-            response['WWW-Authenticate'] = 'Bearer realm="%s"' % REALM
+            response['WWW-Authenticate'] = 'Bearer realm="%s"' % settings.REALM
             response.status_code = 401
             return response
 
@@ -280,7 +293,7 @@ class Validator(object):
                 error = "invalid_request"
                 error_description = "Invalid Request."
             header = [
-                'Bearer realm="%s"' % REALM,
+                'Bearer realm="%s"' % settings.REALM,
                 'error="%s"' % error,
                 'error_description="%s"' % error_description]
             if isinstance(self.error, InsufficientScope):
@@ -296,8 +309,9 @@ class Validator(object):
             return response
 
 class JSONValidator(Validator):
-    """Wraps Authenticator, adds support for a callback parameter and
-    JSON related convenience methods.
+    '''
+    Wraps Authenticator, adds support for a callback parameter and JSON related
+    convenience methods.
 
     **Args:**
 
@@ -305,45 +319,54 @@ class JSONValidator(Validator):
 
     **Kwargs:**
 
-    * *scope:* A iterable of oauth2app.models.AccessRange objects.
-    """
+    * *scope:* A iterable of oauth2.models.AccessRange objects.
+    '''
     
     callback = None
     
-    def __init__(self, scope=None):
-        Validator.__init__(self, scope=scope)
+    def __init__(self, allowed_scope=None):
+        Validator.__init__(self, allowed_scope=allowed_scope)
         
     def validate(self, request):
         self.callback = request.REQUEST.get('callback')
         return Validator.validate(self, request)
         
     def response(self, data):
-        """Returns a HttpResponse object of JSON serialized data.
+        '''
+        Returns a HttpResponse object of JSON serialized data.
 
         **Args:**
 
         * *data:* Object to be JSON serialized and returned.
-        """
+        '''
+        
         json_data = dumps(data)
         if self.callback is not None:
             json_data = "%s(%s);" % (self.callback, json_data)
-        response = HttpResponse(
+        
+        return HttpResponse(
             content=json_data,
-            content_type='application/json')
-        return response
+            content_type='application/json'
+        )
 
     def error_response(self):
-        """Returns a HttpResponse object of JSON error data."""
+        '''
+        Returns a HttpResponse object of JSON error data.
+        '''
+        
         if self.error is not None:
             content = dumps({
                 "error":getattr(self.error, "error", "invalid_request"),
                 "error_description":self.error.message})
+        
         else:
             content = ({
                 "error":"invalid_request",
                 "error_description":"Invalid Request."})
+        
         if self.callback is not None:
             content = "%s(%s);" % (self.callback, content)
+            
         response = Validator.error_response(
             self,
             content=content,
