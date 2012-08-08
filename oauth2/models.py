@@ -102,7 +102,8 @@ class AccessRange(models.Model):
     description = models.TextField(blank=True)
 
 class AccessToken(models.Model):
-    """Stores access token data.
+    '''
+    Stores access token data.
 
     **Args:**
 
@@ -121,8 +122,7 @@ class AccessToken(models.Model):
     * *scope:* A list of oauth2app.models.AccessRange objects. *Default None*
     * *refreshable:* A boolean that indicates whether this access token is
       refreshable. *Default False*
-
-    """
+    '''
     client = models.ForeignKey(Client)
     user = models.ForeignKey(User)
     token = models.CharField(
@@ -152,7 +152,8 @@ class AccessToken(models.Model):
     refreshable = models.BooleanField(default=REFRESHABLE)
 
 class Code(models.Model):
-    """Stores authorization code data.
+    '''
+    Stores authorization code data.
 
     **Args:**
 
@@ -168,8 +169,7 @@ class Code(models.Model):
     * *redirect_uri:* A string representing the redirect_uri provided by the
       requesting client when the code was issued. *Default None*
     * *scope:* A list of oauth2app.models.AccessRange objects. *Default None*
-
-    """
+    '''
     client = models.ForeignKey(Client)
     user = models.ForeignKey(User)
     key = models.CharField(
@@ -186,13 +186,13 @@ class Code(models.Model):
     scope = models.ManyToManyField(AccessRange)
 
 class MACNonce(models.Model):
-    """Stores nonce strings for use with MAC Authentication.
+    '''
+    Stores nonce strings for use with MAC Authentication.
 
     **Args:**
 
     * *access_token:* A oauth2app.models.AccessToken object
     * *nonce:* A unique nonce string.
-
-    """
+    '''
     access_token = models.ForeignKey(AccessToken)
     nonce = models.CharField(max_length=30, db_index=True)

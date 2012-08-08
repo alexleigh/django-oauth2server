@@ -2,7 +2,7 @@ import logging
 
 from tastypie.authorization import Authorization
 from .models import AccessRange
-from .authentication import JSONAuthenticator, AuthenticationException
+from .authenticator import JSONAuthenticator, AuthenticationException
 
 log = logging.getLogger(__name__)
 
