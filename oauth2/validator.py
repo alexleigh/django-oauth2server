@@ -7,35 +7,45 @@ from django.conf import settings
 from django.http import HttpResponse
 
 from .exceptions import OAuth2Exception
-from .models import AccessToken, ProtectedResource, TimestampGenerator
+from .models import AccessToken, Scope
+from .utils import TimestampGenerator
 from .constants import MAC, BEARER
 from .settings import REALM, AUTHENTICATION_METHOD
 
 log = logging.getLogger(__name__)
 
 class ValidationException(OAuth2Exception):
-    """Authentication exception base class."""
+    '''
+    Validation exception base class.
+    '''
     pass
 
 class InvalidRequest(ValidationException):
-    """The request is missing a required parameter, includes an
+    '''
+    The request is missing a required parameter, includes an
     unsupported parameter or parameter value, repeats the same
     parameter, uses more than one method for including an access
-    token, or is otherwise malformed."""
+    token, or is otherwise malformed.
+    '''
     error = 'invalid_request'
 
 class InvalidToken(ValidationException):
-    """The access token provided is expired, revoked, malformed, or
-    invalid for other reasons."""
+    '''
+    The access token provided is expired, revoked, malformed, or otherwise
+    invalid.
+    '''
     error = 'invalid_token'
 
 class InsufficientScope(ValidationException):
-    """The request requires higher privileges than provided by the
-    access token."""
+    '''
+    The request requires more scopes than those provided by the access token.
+    '''
     error = 'insufficient_scope'
 
 class UnvalidatedRequest(OAuth2Exception):
-    """The method requested requires a validated request to continue."""
+    '''
+    The method requested requires a validated request to continue.
+    '''
     pass
 
 class Validator(object):
@@ -61,11 +71,7 @@ class Validator(object):
     error = None
     attempted_validation = False
 
-    def __init__(
-            self, 
-            scope=None, 
-            authentication_method=AUTHENTICATION_METHOD
-        ):
+    def __init__(self, scope=None, authentication_method=AUTHENTICATION_METHOD):
         if authentication_method not in [BEARER, MAC, BEARER | MAC]:
             raise OAuth2Exception("Possible values for authentication_method " 
                 "are oauth2.constants.MAC, oauth2.constants.BEARER, "
@@ -74,7 +80,7 @@ class Validator(object):
         
         if scope is None:
             self.authorized_scope = None
-        elif isinstance(scope, ProtectedResource):
+        elif isinstance(scope, Scope):
             self.authorized_scope = set([scope.key])
         else:
             self.authorized_scope = set([x.key for x in scope])

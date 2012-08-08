@@ -83,13 +83,13 @@ class ProtectedResource(models.Model):
     description = models.TextField(blank=True)
     requires_user = models.BooleanField(default=False)
 
-class AccessRange(models.Model):
+class Scope(models.Model):
     '''
     Stores OAuth 2 scopes.
 
     **Args:**
 
-    * *scope:* A string representing the OAuth2 scope needed to access the
+    * *name:* A string representing the OAuth2 scope needed to access the
        resource. Used in access token requests and validation
 
     **Kwargs:**
@@ -98,7 +98,7 @@ class AccessRange(models.Model):
       *Default None*
     '''
     
-    scope = models.CharField(unique=True, max_length=SCOPE_LENGTH, db_index=True)
+    name = models.CharField(unique=True, max_length=SCOPE_LENGTH, db_index=True)
     description = models.TextField(blank=True)
 
 class AccessToken(models.Model):
@@ -148,7 +148,7 @@ class AccessToken(models.Model):
         default=TimestampGenerator())
     expire = models.PositiveIntegerField(
         default=TimestampGenerator(ACCESS_TOKEN_EXPIRATION))
-    scope = models.ManyToManyField(AccessRange)
+    scope = models.ManyToManyField(Scope)
     refreshable = models.BooleanField(default=REFRESHABLE)
 
 class Code(models.Model):
@@ -183,7 +183,7 @@ class Code(models.Model):
     expire = models.PositiveIntegerField(
         default=TimestampGenerator(CODE_EXPIRATION))
     redirect_uri = models.URLField(null=True)
-    scope = models.ManyToManyField(AccessRange)
+    scope = models.ManyToManyField(Scope)
 
 class MACNonce(models.Model):
     '''
