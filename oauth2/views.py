@@ -54,6 +54,7 @@ class ClientAuthorizationView(View):
     query = {}
     user = None
     client = None
+    redirect_uri = None
     scopes = []
     error = None
     valid = False
@@ -203,10 +204,10 @@ class ClientAuthorizationView(View):
                 raise MissingRedirectURI('No redirect_uri provided or registered.')
         elif self.client.redirect_uri is not None:
             if normalize(self.query['redirect_uri']) != normalize(self.client.redirect_uri):
-                self.query['redirect_uri'] = self.client.redirect_uri
+                self.redirect_uri = self.client.redirect_uri
                 raise InvalidAuthorizationRequest('Registered redirect_uri doesn\'t match provided redirect_uri.')
-        self.query['redirect_uri'] = self.query['redirect_uri'] or self.client.redirect_uri
-        if not absolute_http_url_re.match(self.query['redirect_uri']):
+        self.redirect_uri = self.query['redirect_uri'] or self.client.redirect_uri
+        if not absolute_http_url_re.match(self.redirect_uri):
             raise InvalidAuthorizationRequest('Absolute URI required for redirect_uri')
         
         # check response type
@@ -239,9 +240,9 @@ class ClientAuthorizationView(View):
         '''
         Raise MissingRedirectURI if no redirect_uri is available.
         '''
-        if self.query['redirect_uri'] is None:
+        if self.redirect_uri is None:
             raise MissingRedirectURI('No redirect_uri to send response.')
-        if not absolute_http_url_re.match(self.query['redirect_uri']):
+        if not absolute_http_url_re.match(self.redirect_uri):
             raise MissingRedirectURI('Absolute redirect_uri required.')
 
     def error_redirect(self):
@@ -265,7 +266,7 @@ class ClientAuthorizationView(View):
         
         if self.state is not None:
             parameters['state'] = self.state
-        redirect_uri = self.query['redirect_uri']
+        redirect_uri = self.redirect_uri
         
         if self.authorized_response_type & constants.CODE != 0:
             redirect_uri = add_parameters(redirect_uri, parameters)
@@ -297,19 +298,19 @@ class ClientAuthorizationView(View):
                 code = Code.objects.create(
                     user=self.user,
                     client=self.client,
-                    redirect_uri=self.redirect_uri,
-                    scopes=self.scopes
+                    redirect_uri=self.redirect_uri
                 )
                 
+                code.scopes.add(*self.scopes)
                 code.save()
                 parameters['code'] = code.code
             
             if RESPONSE_TYPES[self.query['response_type']] & constants.TOKEN != 0:
                 token = Token.objects.create(
                     user=self.user,
-                    client=self.client,
-                    scopes=self.scopes
+                    client=self.client
                 )
+                token.scopes.add(*self.scopes)
                 
                 fragments['access_token'] = token.access_token
                 if token.refreshable:
@@ -333,7 +334,7 @@ class ClientAuthorizationView(View):
             if self.query['state'] is not None:
                 parameters['state'] = self.query['state']
             
-            redirect_uri = add_parameters(self.query['redirect_uri'], parameters)
+            redirect_uri = add_parameters(self.redirect_uri, parameters)
             redirect_uri = add_fragments(redirect_uri, fragments)
             return HttpResponseRedirect(redirect_uri)
         
@@ -384,6 +385,9 @@ class TokenView(View):
     @method_decorator(csrf_exempt)
     def dispatch(self, *args, **kwargs):
         return super(TokenView, self).dispatch(*args, **kwargs)
+    
+    def get(self, request, *args, **kwargs):
+        return self.valiate(request)
     
     def validate(self, request):
         '''
