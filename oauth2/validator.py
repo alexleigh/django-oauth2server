@@ -133,8 +133,8 @@ class Validator(object):
 
     def validate(self, request):
         '''
-        Validate the request. Raises an AuthenticationException if the request
-        fails authentication.
+        Validate the request. Raises an ValidationException if the request
+        fails validation.
 
         **Args:**
 

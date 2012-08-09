@@ -1,9 +1,9 @@
 from django.contrib import admin
 
-from .models import Client, Scope, AccessToken, Code, MACNonce
+from .models import Client, Scope, Code, Token, Nonce
 
 admin.site.register(Client)
 admin.site.register(Scope)
-admin.site.register(AccessToken)
 admin.site.register(Code)
-admin.site.register(MACNonce)
+admin.site.register(Token)
+admin.site.register(Nonce)
