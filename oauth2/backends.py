@@ -10,7 +10,7 @@ from . import constants
 from . import settings
 from .models import Scope, Token
 from .utils import TimestampGenerator
-from .exceptions import OAuth2Exception, UnvalidatedRequest, ValidationException, InvalidRequest, InvalidToken, InsufficientScope
+from .exceptions import OAuth2Exception, UnvalidatedRequest, InvalidAccessRequest, InvalidToken, InsufficientScope
 
 log = logging.getLogger(__name__)
 
@@ -127,7 +127,7 @@ class Validator(object):
         
         try:
             self._validate()
-        except ValidationException as e:
+        except (InvalidAccessRequest, InvalidToken, InsufficientScope) as e:
             self.error = e
             raise e
         self.valid = True
@@ -145,7 +145,7 @@ class Validator(object):
             self.valid = True
 
         else:
-            raise InvalidRequest('Request authentication failed, no authentication credentials provided.')
+            raise InvalidAccessRequest('Request authentication failed, no authentication credentials provided.')
         
         if self.allowed_scope is not None:
             token_scope = set([x.key for x in self.access_token.scope.all()])
@@ -196,9 +196,9 @@ class Validator(object):
         else:
             ext = ""
         if self.request_hostname is None:
-            raise InvalidRequest("Request does not contain a hostname.")
+            raise InvalidAccessRequest("Request does not contain a hostname.")
         if self.request_port is None:
-            raise InvalidRequest("Request does not contain a port.")
+            raise InvalidAccessRequest("Request does not contain a port.")
         nonce_timestamp, nonce_string = mac_header["nonce"].split(":")
         mac = sha256("\n".join([
             mac_header["nonce"], # The nonce value generated for the request
@@ -267,7 +267,7 @@ class Validator(object):
                 response.status_code = 403
             elif isinstance(self.error, InvalidToken):
                 response.status_code = 401
-            elif isinstance(self.error, InvalidRequest):
+            elif isinstance(self.error, InvalidAccessRequest):
                 response.status_code = 400
             else:
                 response.status_code = 401

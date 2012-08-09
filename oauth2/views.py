@@ -17,8 +17,8 @@ from .forms import AuthorizationForm
 from .utils import KeyGenerator, TimestampGenerator
 from .utils.uri import add_parameters, add_fragments, normalize
 from .exceptions import OAuth2Exception, InvalidClient, MissingRedirectURI, UnvalidatedRequest, UnauthenticatedUser, InvalidScope, UnauthorizedScope
-from .exceptions import AuthorizationException, InvalidAuthorizationRequest, AccessDenied, UnsupportedResponseType, UnauthorizedResponseType
-from .exceptions import TokenException, InvalidTokenRequest, UnsupportedGrantType, InvalidGrant
+from .exceptions import InvalidAuthorizationRequest, AccessDenied, UnsupportedResponseType, UnauthorizedResponseType
+from .exceptions import InvalidTokenRequest, UnsupportedGrantType, InvalidGrant
 
 log = logging.getLogger(__name__)
 
@@ -126,7 +126,7 @@ class Authorizer(object):
         
         try:
             self._validate()
-        except (AuthorizationException, InvalidClient, InvalidScope, UnauthorizedScope) as e:
+        except (InvalidClient, InvalidScope, UnauthorizedScope, InvalidAuthorizationRequest, UnsupportedResponseType, UnauthorizedResponseType, AccessDenied) as e:
             self._check_redirect_uri()
             self.error = e
             raise e
@@ -304,7 +304,7 @@ def authorize(request):
         log.info('Authorization error %s' % e)
         return HttpResponseRedirect('/oauth2/missing_redirect_uri/')
     
-    except AuthorizationException, e:
+    except (InvalidClient, InvalidScope, UnauthorizedScope, InvalidAuthorizationRequest, UnsupportedResponseType, UnauthorizedResponseType, AccessDenied), e:
         # The request is malformed or invalid. Automatically redirect to the provided redirect URL.
         log.info('Authorization error %s' % e)
         return authorizer.error_redirect()
@@ -402,7 +402,7 @@ class TokenGenerator(object):
         
         try:
             self._validate()
-        except (TokenException, InvalidClient, InvalidScope, UnauthorizedScope) as e:
+        except (InvalidTokenRequest, UnsupportedGrantType, InvalidGrant, InvalidClient, InvalidScope, UnauthorizedScope) as e:
             self.error = e
             return self.error_response()
         

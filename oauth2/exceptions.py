@@ -30,6 +30,12 @@ class UnvalidatedRequest(OAuth2Exception):
     '''
     pass
 
+class AccessDenied(OAuth2Exception):
+    '''
+    The resource owner or authorization server denied the request.
+    '''
+    error = 'access_denied'
+
 class InvalidScope(OAuth2Exception):
     '''
     The requested scope is invalid, unknown, or malformed.
@@ -43,47 +49,20 @@ class UnauthorizedScope(OAuth2Exception):
     '''
     error = 'unauthorized_scope'
 
-# authorization exceptions ----------
-class AuthorizationException(OAuth2Exception):
+class InsufficientScope(OAuth2Exception):
     '''
-    Authorization exception base class.
+    The request requires more scopes than those provided by the access token.
     '''
-    pass
+    error = 'insufficient_scope'
 
-class InvalidAuthorizationRequest(AuthorizationException):
+class InvalidAuthorizationRequest(OAuth2Exception):
     '''
     The request is missing a required parameter, includes an unsupported
     parameter or parameter value, or is otherwise malformed.
     '''
     error = 'invalid_request'
 
-class UnsupportedResponseType(AuthorizationException):
-    '''
-    The authorization response type is not supported by the authorization server.
-    '''
-    error = 'unsupported_response_type'
-
-class UnauthorizedResponseType(AuthorizationException):
-    '''
-    The client is not authorized to request an authorization code using this
-    method.
-    '''
-    error = 'unauthorized_response_type'
-
-class AccessDenied(AuthorizationException):
-    '''
-    The resource owner or authorization server denied the request.
-    '''
-    error = 'access_denied'
-    
-# token exceptions ----------
-class TokenException(OAuth2Exception):
-    '''
-    Access Token exception base class.
-    '''
-    pass
-
-class InvalidTokenRequest(TokenException):
+class InvalidTokenRequest(OAuth2Exception):
     '''
     The request is missing a required parameter, includes an
     unsupported parameter or parameter value, repeats a
@@ -93,28 +72,7 @@ class InvalidTokenRequest(TokenException):
     '''
     error = 'invalid_request'
 
-class UnsupportedGrantType(TokenException):
-    '''
-    The authorization grant type is not supported by the authorization server.
-    '''
-    error = 'unsupported_grant_type'
-
-class InvalidGrant(TokenException):
-    '''
-    The provided authorization grant is invalid, expired, revoked, does not
-    match the redirection URI used in the authorization request, or was issued
-    to another client.
-    '''
-    error = 'invalid_grant'
-
-# validation exceptions ----------
-class ValidationException(OAuth2Exception):
-    '''
-    Validation exception base class.
-    '''
-    pass
-
-class InvalidRequest(ValidationException):
+class InvalidAccessRequest(OAuth2Exception):
     '''
     The request is missing a required parameter, includes an
     unsupported parameter or parameter value, repeats the same
@@ -123,15 +81,36 @@ class InvalidRequest(ValidationException):
     '''
     error = 'invalid_request'
 
-class InvalidToken(ValidationException):
+class InvalidGrant(OAuth2Exception):
+    '''
+    The provided authorization grant is invalid, expired, revoked, does not
+    match the redirection URI used in the authorization request, or was issued
+    to another client.
+    '''
+    error = 'invalid_grant'
+
+class InvalidToken(OAuth2Exception):
     '''
     The access token provided is expired, revoked, malformed, or otherwise
     invalid.
     '''
     error = 'invalid_token'
 
-class InsufficientScope(ValidationException):
+class UnsupportedResponseType(OAuth2Exception):
     '''
-    The request requires more scopes than those provided by the access token.
+    The authorization response type is not supported by the authorization server.
     '''
-    error = 'insufficient_scope'
+    error = 'unsupported_response_type'
+
+class UnauthorizedResponseType(OAuth2Exception):
+    '''
+    The client is not authorized to request an authorization code using this
+    method.
+    '''
+    error = 'unauthorized_response_type'
+
+class UnsupportedGrantType(OAuth2Exception):
+    '''
+    The authorization grant type is not supported by the authorization server.
+    '''
+    error = 'unsupported_grant_type'
