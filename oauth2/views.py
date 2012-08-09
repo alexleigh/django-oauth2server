@@ -33,9 +33,9 @@ RESPONSE_TYPES = {
 def missing_redirect_uri(request):
     return render_to_response('oauth2/missing_redirect_uri.html', context_instance=RequestContext(request))
 
-class AuthorizeView(View):
+class ClientAuthorizationView(View):
     '''
-    Client authorizer. Validates access credentials and generates a response
+    Client authorization. Validates access credentials and generates a response
     with an authorization code passed as a parameter to the redirect URI, an
     access token passed as a URI fragment to the redirect URI, or both.
 
@@ -52,8 +52,8 @@ class AuthorizeView(View):
       *Default None*
     '''
     query = {}
-    client = None
     user = None
+    client = None
     scopes = []
     error = None
     valid = False
@@ -112,21 +112,13 @@ class AuthorizeView(View):
 
     @method_decorator(login_required)
     def dispatch(self, *args, **kwargs):
-        return super(AuthorizeView, self).dispatch(*args, **kwargs)
+        return super(ClientAuthorizationView, self).dispatch(*args, **kwargs)
     
     def get(self, request, *args, **kwargs):
-        query = {
-            'client_id': request.REQUEST.get('client_id'),
-            'redirect_uri': request.REQUEST.get('redirect_uri'),
-            'response_type': request.REQUEST.get('response_type'),
-            'scope': request.REQUEST.get('scope'),
-            'state': request.REQUEST.get('state'),
-        }
-        
         try:
-            self.validate(self.request.user, query)
+            self.validate(request, *args, **kwargs)
         
-        except MissingRedirectURI, e:
+        except MissingRedirectURI as e:
             log.info('Authorization error %s' % e)
             return HttpResponseRedirect('/oauth2/missing_redirect_uri/')
         
@@ -146,18 +138,10 @@ class AuthorizeView(View):
         return render_to_response('oauth2/authorize.html', context, RequestContext(request))
 
     def post(self, request, *args, **kwargs):
-        query = {
-            'client_id': request.REQUEST.get('client_id'),
-            'redirect_uri': request.REQUEST.get('redirect_uri'),
-            'response_type': request.REQUEST.get('response_type'),
-            'scope': request.REQUEST.get('scope'),
-            'state': request.REQUEST.get('state'),
-        }
-        
         try:
-            self.validate(self.request.user, query)
+            self.validate(request, *args, **kwargs)
         
-        except MissingRedirectURI, e:
+        except MissingRedirectURI as e:
             log.info('Authorization error %s' % e)
             return HttpResponseRedirect('/oauth2/missing_redirect_uri/')
         
@@ -175,7 +159,7 @@ class AuthorizeView(View):
         
         return HttpResponseRedirect('/')
         
-    def validate(self, user, query):
+    def validate(self, request, *args, **kwargs):
         '''
         Validate the request. Raises an AuthorizationException if the
         request fails authorization, or a MissingRedirectURI if no
@@ -183,13 +167,17 @@ class AuthorizeView(View):
 
         **Args:**
 
-        * *user:*
-        * *query:*
-
         *Returns None*
         '''
-        self.query = query
-        self.user = user
+        self.query = {
+            'client_id': request.REQUEST.get('client_id'),
+            'redirect_uri': request.REQUEST.get('redirect_uri'),
+            'response_type': request.REQUEST.get('response_type'),
+            'scope': request.REQUEST.get('scope'),
+            'state': request.REQUEST.get('state'),
+        }
+        
+        self.user = request.user
         
         try:
             self._validate()
@@ -352,7 +340,7 @@ class AuthorizeView(View):
         else:
             raise UnauthenticatedUser('User object associated with the request is not authenticated.')
 
-class TokenGenerator(View):
+class TokenView(View):
     '''
     Token access handler. Validates authorization codes, refresh tokens,
     username/password pairs, and generates a JSON formatted authorization code.
@@ -393,6 +381,10 @@ class TokenGenerator(View):
         
         self.allowed_scopes = allowed_scopes
 
+    @method_decorator(csrf_exempt)
+    def dispatch(self, *args, **kwargs):
+        return super(TokenView, self).dispatch(*args, **kwargs)
+    
     def validate(self, request):
         '''
         Validate the request. Raises an AccessTokenException if the
