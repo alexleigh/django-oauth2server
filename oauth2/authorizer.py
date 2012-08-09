@@ -98,9 +98,9 @@ class Authorizer(object):
       *Default True*
     '''
     client = None
+    scopes = []
     error = None
     valid = False
-    scopes = []
 
     @property
     def query_string(self):

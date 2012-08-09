@@ -4,9 +4,10 @@ from model_utils import Choices
 
 from .utils import KeyGenerator, TimestampGenerator
 from .settings import CLIENT_ID_LENGTH, CLIENT_SECRET_LENGTH, SCOPE_LENGTH
-from .settings import ACCESS_TOKEN_LENGTH, REFRESH_TOKEN_LENGTH
-from .settings import ACCESS_TOKEN_EXPIRATION, MAC_KEY_LENGTH, REFRESHABLE
 from .settings import CODE_LENGTH, CODE_EXPIRATION
+from .settings import ACCESS_TOKEN_LENGTH, ACCESS_TOKEN_EXPIRATION
+from .settings import REFRESH_TOKEN_LENGTH, REFRESHABLE
+from .settings import MAC_KEY_LENGTH
 
 class Client(models.Model):
     '''
