@@ -9,7 +9,7 @@ from django.http import HttpResponse
 from . import constants
 from . import settings
 from .exceptions import OAuth2Exception
-from .models import AccessToken, Scope
+from .models import Token, Scope
 from .utils import TimestampGenerator
 
 log = logging.getLogger(__name__)
@@ -202,9 +202,9 @@ class Validator(object):
             raise InvalidToken('Bearer authentication is not supported.')
 
         try:
-            self.access_token = AccessToken.objects.get(token=token)
+            self.access_token = Token.objects.get(token=token)
         
-        except AccessToken.DoesNotExist:
+        except Token.DoesNotExist:
             raise InvalidToken('Token doesn\'t exist')
 
     def _validate_mac(self, mac_header):

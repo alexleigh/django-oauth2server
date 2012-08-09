@@ -1,3 +1,4 @@
+import logging
 from base64 import b64encode
 from json import dumps
 
@@ -10,6 +11,8 @@ from .exceptions import OAuth2Exception
 from .lib.uri import normalize
 from .models import Client, Scope, Code, Token
 from .utils import KeyGenerator, TimestampGenerator
+
+log = logging.getLogger(__name__)
 
 class AccessTokenException(OAuth2Exception):
     '''
@@ -87,7 +90,6 @@ class TokenGenerator(object):
     * *refreshable:* Boolean value indicating whether issued tokens are
       refreshable.
     '''
-    request = None
     client = None
     user = None
     code = None
@@ -123,6 +125,8 @@ class TokenGenerator(object):
         self.client_secret = request.POST.get('client_secret')
         self.scope = request.REQUEST.get('scope')
         
+        self.http_authorization = self.request.META['HTTP_AUTHORIZATION']
+        
         # authorization_code, see 4.1.3.  Access Token Request
         self.authorization_code = request.REQUEST.get('code')
         self.redirect_uri = request.REQUEST.get('redirect_uri')
@@ -137,7 +141,6 @@ class TokenGenerator(object):
         
         # optional json callback
         self.callback = request.REQUEST.get('callback')
-        self.request = request
         
         try:
             self._validate()

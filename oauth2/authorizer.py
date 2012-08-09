@@ -1,3 +1,4 @@
+import logging
 from urllib import urlencode
 
 from django.http import absolute_http_url_re, HttpResponseRedirect
@@ -8,6 +9,8 @@ from .lib.uri import add_parameters, add_fragments, normalize
 from .exceptions import OAuth2Exception
 from .models import Client, Scope, Code, Token
 from .utils import KeyGenerator
+
+log = logging.getLogger(__name__)
 
 RESPONSE_TYPES = {
     'code': constants.CODE,
@@ -97,7 +100,9 @@ class Authorizer(object):
       refreshable.
       *Default True*
     '''
+    query = {}
     client = None
+    user = None
     scopes = []
     error = None
     valid = False
@@ -116,18 +121,18 @@ class Authorizer(object):
             raise UnvalidatedRequest('This request is invalid or has not been validated.')
         
         parameters = {
-            'response_type': self.response_type,
-            'client_id': self.client_id
+            'response_type': self.query['response_type'],
+            'client_id': self.query['client_id']
         }
         
-        if self.redirect_uri is not None:
-            parameters['redirect_uri'] = self.redirect_uri
+        if self.query['redirect_uri'] is not None:
+            parameters['redirect_uri'] = self.query['redirect_uri']
         
-        if self.state is not None:
-            parameters['state'] = self.state
+        if self.query['state'] is not None:
+            parameters['state'] = self.query['state']
         
-        if self.scope is not None:
-            parameters['scope'] = self.scope
+        if self.query['scope'] is not None:
+            parameters['scope'] = self.query['scope']
         
         return urlencode(parameters)
 
@@ -166,13 +171,14 @@ class Authorizer(object):
 
         *Returns None*
         '''
-        self.client_id = request.REQUEST.get('client_id')
-        self.redirect_uri = request.REQUEST.get('redirect_uri')
-        self.response_type = request.REQUEST.get('response_type')
-        self.scope = request.REQUEST.get('scope')
-        self.state = request.REQUEST.get('state')
+        # store query parameters
+        self.query['client_id'] = request.REQUEST.get('client_id')
+        self.query['redirect_uri'] = request.REQUEST.get('redirect_uri')
+        self.query['response_type'] = request.REQUEST.get('response_type')
+        self.query['scope'] = request.REQUEST.get('scope')
+        self.query['state'] = request.REQUEST.get('state')
+        
         self.user = request.user
-        self.request = request
         
         try:
             self._validate()
@@ -185,36 +191,36 @@ class Authorizer(object):
 
     def _validate(self):
         # check client_id
-        if self.client_id is None:
+        if self.query['client_id'] is None:
             raise InvalidRequest('No client_id provided')
         try:
-            self.client = Client.objects.get(client_id=self.client_id)
+            self.client = Client.objects.get(client_id=self.query['client_id'])
         except Client.DoesNotExist:
-            raise InvalidClient("client_id %s doesn't exist" % self.client_id)
+            raise InvalidClient("client_id %s doesn't exist" % self.query['client_id'])
         
         # check redirect URI
-        if self.redirect_uri is None:
+        if self.query['redirect_uri'] is None:
             if self.client.redirect_uri is None:
                 raise MissingRedirectURI('No redirect_uri provided or registered.')
         elif self.client.redirect_uri is not None:
-            if normalize(self.redirect_uri) != normalize(self.client.redirect_uri):
-                self.redirect_uri = self.client.redirect_uri
+            if normalize(self.query['redirect_uri']) != normalize(self.client.redirect_uri):
+                self.query['redirect_uri'] = self.client.redirect_uri
                 raise InvalidRequest('Registered redirect_uri doesn\'t match provided redirect_uri.')
-        self.redirect_uri = self.redirect_uri or self.client.redirect_uri
-        if not absolute_http_url_re.match(self.redirect_uri):
+        self.query['redirect_uri'] = self.query['redirect_uri'] or self.client.redirect_uri
+        if not absolute_http_url_re.match(self.query['redirect_uri']):
             raise InvalidRequest('Absolute URI required for redirect_uri')
         
         # check response type
-        if self.response_type is None:
+        if self.query['response_type'] is None:
             raise InvalidRequest('response_type is a required parameter.')
-        if self.response_type not in ['code', 'token']:
-            raise InvalidRequest('No such response type %s' % self.response_type)
-        if self.authorized_response_type & RESPONSE_TYPES[self.response_type] == 0:
-            raise UnauthorizedClient('Response type %s not allowed.' % self.response_type)
+        if self.query['response_type'] not in ['code', 'token']:
+            raise InvalidRequest('No such response type %s' % self.query['response_type'])
+        if self.authorized_response_type & RESPONSE_TYPES[self.query['response_type']] == 0:
+            raise UnauthorizedClient('Response type %s not allowed.' % self.query['response_type'])
         
         # check scope
-        if self.scope is not None:
-            scope_names = set(self.scope.split())
+        if self.query['scope'] is not None:
+            scope_names = set(self.query['scope'].split())
             invalid_scope_names = []
             for scope_name in scope_names:
                 try:
@@ -234,9 +240,9 @@ class Authorizer(object):
         '''
         Raise MissingRedirectURI if no redirect_uri is available.
         '''
-        if self.redirect_uri is None:
+        if self.query['redirect_uri'] is None:
             raise MissingRedirectURI('No redirect_uri to send response.')
-        if not absolute_http_url_re.match(self.redirect_uri):
+        if not absolute_http_url_re.match(self.query['redirect_uri']):
             raise MissingRedirectURI('Absolute redirect_uri required.')
 
     def error_redirect(self):
@@ -260,7 +266,7 @@ class Authorizer(object):
         
         if self.state is not None:
             parameters['state'] = self.state
-        redirect_uri = self.redirect_uri
+        redirect_uri = self.query['redirect_uri']
         
         if self.authorized_response_type & constants.CODE != 0:
             redirect_uri = add_parameters(redirect_uri, parameters)
@@ -288,7 +294,7 @@ class Authorizer(object):
             parameters = {}
             fragments = {}
             
-            if RESPONSE_TYPES[self.response_type] & constants.CODE != 0:
+            if RESPONSE_TYPES[self.query['response_type']] & constants.CODE != 0:
                 code = Code.objects.create(
                     user=self.user,
                     client=self.client,
@@ -299,7 +305,7 @@ class Authorizer(object):
                 code.save()
                 parameters['code'] = code.code
             
-            if RESPONSE_TYPES[self.response_type] & constants.TOKEN != 0:
+            if RESPONSE_TYPES[self.query['response_type']] & constants.TOKEN != 0:
                 token = Token.objects.create(
                     user=self.user,
                     client=self.client,
@@ -311,8 +317,8 @@ class Authorizer(object):
                     fragments['refresh_token'] = token.refresh_token
                 fragments['expires_in'] = settings.ACCESS_TOKEN_EXPIRATION
                 
-                if self.scope is not None:
-                    fragments['scope'] = self.scope
+                if self.query['scope'] is not None:
+                    fragments['scope'] = self.query['scope']
                 
                 if self.authentication_method == constants.MAC:
                     token.mac_key = KeyGenerator(settings.MAC_KEY_LENGTH)()
@@ -325,10 +331,10 @@ class Authorizer(object):
                 
                 token.save()
             
-            if self.state is not None:
-                parameters['state'] = self.state
+            if self.query['state'] is not None:
+                parameters['state'] = self.query['state']
             
-            redirect_uri = add_parameters(self.redirect_uri, parameters)
+            redirect_uri = add_parameters(self.query['redirect_uri'], parameters)
             redirect_uri = add_fragments(redirect_uri, fragments)
             return HttpResponseRedirect(redirect_uri)
         
