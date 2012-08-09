@@ -9,6 +9,8 @@ from django.shortcuts import render_to_response
 from django.contrib.auth import authenticate
 from django.contrib.auth.decorators import login_required
 from django.views.decorators.csrf import csrf_exempt
+from django.views.generic import View
+from django.utils.decorators import method_decorator
 
 from . import constants
 from . import settings
@@ -31,7 +33,7 @@ RESPONSE_TYPES = {
 def missing_redirect_uri(request):
     return render_to_response('oauth2/missing_redirect_uri.html', context_instance=RequestContext(request))
 
-class Authorizer(object):
+class AuthorizeView(View):
     '''
     Client authorizer. Validates access credentials and generates a response
     with an authorization code passed as a parameter to the redirect URI, an
@@ -108,6 +110,71 @@ class Authorizer(object):
         
         self.allowed_scopes = allowed_scopes
 
+    @method_decorator(login_required)
+    def dispatch(self, *args, **kwargs):
+        return super(AuthorizeView, self).dispatch(*args, **kwargs)
+    
+    def get(self, request, *args, **kwargs):
+        query = {
+            'client_id': request.REQUEST.get('client_id'),
+            'redirect_uri': request.REQUEST.get('redirect_uri'),
+            'response_type': request.REQUEST.get('response_type'),
+            'scope': request.REQUEST.get('scope'),
+            'state': request.REQUEST.get('state'),
+        }
+        
+        try:
+            self.validate(self.request.user, query)
+        
+        except MissingRedirectURI, e:
+            log.info('Authorization error %s' % e)
+            return HttpResponseRedirect('/oauth2/missing_redirect_uri/')
+        
+        except (InvalidClient, InvalidScope, UnauthorizedScope, InvalidAuthorizationRequest, UnsupportedResponseType, UnauthorizedResponseType, AccessDenied) as e:
+            # The request is malformed or invalid. Automatically redirect to the provided redirect URL.
+            log.info('Authorization error %s' % e)
+            return self.error_redirect()
+        
+        # Make sure the authorizer has validated before requesting the client or scopes as otherwise they will be None.
+        form = AuthorizationForm()
+            
+        context = {
+            'client': self.client, 
+            'scopes': self.scopes,
+            'form': form,
+        }
+        return render_to_response('oauth2/authorize.html', context, RequestContext(request))
+
+    def post(self, request, *args, **kwargs):
+        query = {
+            'client_id': request.REQUEST.get('client_id'),
+            'redirect_uri': request.REQUEST.get('redirect_uri'),
+            'response_type': request.REQUEST.get('response_type'),
+            'scope': request.REQUEST.get('scope'),
+            'state': request.REQUEST.get('state'),
+        }
+        
+        try:
+            self.validate(self.request.user, query)
+        
+        except MissingRedirectURI, e:
+            log.info('Authorization error %s' % e)
+            return HttpResponseRedirect('/oauth2/missing_redirect_uri/')
+        
+        except (InvalidClient, InvalidScope, UnauthorizedScope, InvalidAuthorizationRequest, UnsupportedResponseType, UnauthorizedResponseType, AccessDenied) as e:
+            # The request is malformed or invalid. Automatically redirect to the provided redirect URL.
+            log.info('Authorization error %s' % e)
+            return self.error_redirect()
+        
+        form = AuthorizationForm(request.POST)
+        if form.is_valid():
+            if request.POST.get('authorize') == 'Allow access':
+                return self.grant_redirect()
+            else:
+                return self.error_redirect()
+        
+        return HttpResponseRedirect('/')
+        
     def validate(self, user, query):
         '''
         Validate the request. Raises an AuthorizationException if the
@@ -285,52 +352,7 @@ class Authorizer(object):
         else:
             raise UnauthenticatedUser('User object associated with the request is not authenticated.')
 
-@login_required
-def authorize(request):
-    authorizer = Authorizer()
-    
-    query = {
-        'client_id': request.REQUEST.get('client_id'),
-        'redirect_uri': request.REQUEST.get('redirect_uri'),
-        'response_type': request.REQUEST.get('response_type'),
-        'scope': request.REQUEST.get('scope'),
-        'state': request.REQUEST.get('state'),
-    }
-    
-    try:
-        authorizer.validate(request.user, query)
-    
-    except MissingRedirectURI, e:
-        log.info('Authorization error %s' % e)
-        return HttpResponseRedirect('/oauth2/missing_redirect_uri/')
-    
-    except (InvalidClient, InvalidScope, UnauthorizedScope, InvalidAuthorizationRequest, UnsupportedResponseType, UnauthorizedResponseType, AccessDenied), e:
-        # The request is malformed or invalid. Automatically redirect to the provided redirect URL.
-        log.info('Authorization error %s' % e)
-        return authorizer.error_redirect()
-    
-    if request.method == 'GET':
-        # Make sure the authorizer has validated before requesting the client or scopes as otherwise they will be None.
-        form = AuthorizationForm()
-        
-        context = {
-            'client': authorizer.client, 
-            'scopes': authorizer.scopes,
-            'form': form,
-        }
-        return render_to_response('oauth2/authorize.html', context, RequestContext(request))
-    
-    elif request.method == 'POST':
-        form = AuthorizationForm(request.POST)
-        if form.is_valid():
-            if request.POST.get('authorize') == 'Allow access':
-                return authorizer.grant_redirect()
-            else:
-                return authorizer.error_redirect()
-    
-    return HttpResponseRedirect('/')
-
-class TokenGenerator(object):
+class TokenGenerator(View):
     '''
     Token access handler. Validates authorization codes, refresh tokens,
     username/password pairs, and generates a JSON formatted authorization code.
@@ -684,8 +706,3 @@ class TokenGenerator(object):
         self.access_token.save()
         
         return self.access_token
-
-@csrf_exempt
-def token(request):
-    token_generator = TokenGenerator()
-    return token_generator.validate(request)
