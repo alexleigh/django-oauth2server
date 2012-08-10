@@ -18,16 +18,12 @@ from .models import Client, Scope, Code, Token
 from .forms import AuthorizationForm
 from .utils import KeyGenerator, TimestampGenerator
 from .utils.uri import add_parameters, add_fragments, normalize
-from .exceptions import OAuth2Exception, InvalidClient, MissingRedirectURI, UnvalidatedRequest, UnauthenticatedUser, InvalidScope, UnauthorizedScope
+from .exceptions import OAuth2Exception, InvalidClient, MissingRedirectURI, UnauthenticatedUser, InvalidScope, UnauthorizedScope
 from .exceptions import InvalidAuthorizationRequest, AccessDenied, UnsupportedResponseType, UnauthorizedResponseType
 from .exceptions import InvalidTokenRequest, UnsupportedGrantType, InvalidGrant
 
 log = logging.getLogger(__name__)
 
-RESPONSE_TYPES = {
-    'code': constants.CODE,
-    'token': constants.TOKEN
-}
 
 @login_required
 def missing_redirect_uri(request):
@@ -52,6 +48,11 @@ class ClientAuthorizationView(View):
       *Default None*
     '''
 
+    RESPONSE_TYPES = {
+        'code': constants.CODE,
+        'token': constants.TOKEN
+    }
+    
     @property
     def query_string(self):
         '''
@@ -62,6 +63,7 @@ class ClientAuthorizationView(View):
 
         *Returns str*
         '''
+        # TODO: remove
         if not self.valid:
             raise UnvalidatedRequest('This request is invalid or has not been validated.')
         
@@ -95,7 +97,6 @@ class ClientAuthorizationView(View):
         self.redirect_uri = None
         self.scopes = []
         self.error = None
-        self.valid = False
         
         if authentication_method not in [constants.BEARER, constants.MAC]:
             raise OAuth2Exception('Possible values for authentication_method '
@@ -125,7 +126,7 @@ class ClientAuthorizationView(View):
             return HttpResponseRedirect('/oauth2/missing_redirect_uri/')
         
         except (InvalidClient, InvalidScope, UnauthorizedScope, InvalidAuthorizationRequest, UnsupportedResponseType, UnauthorizedResponseType, AccessDenied) as e:
-            # The request is malformed or invalid. Automatically redirect to the provided redirect URL.
+            # The request is malformed or invalid. Automatically redirect to the provided redirect URI.
             log.info('Authorization error %s' % e)
             return self.error_redirect()
         
@@ -148,7 +149,7 @@ class ClientAuthorizationView(View):
             return HttpResponseRedirect('/oauth2/missing_redirect_uri/')
         
         except (InvalidClient, InvalidScope, UnauthorizedScope, InvalidAuthorizationRequest, UnsupportedResponseType, UnauthorizedResponseType, AccessDenied) as e:
-            # The request is malformed or invalid. Automatically redirect to the provided redirect URL.
+            # The request is malformed or invalid. Automatically redirect to the provided redirect URI.
             log.info('Authorization error %s' % e)
             return self.error_redirect()
         
@@ -187,8 +188,6 @@ class ClientAuthorizationView(View):
             self._check_redirect_uri()
             self.error = e
             raise e
-        
-        self.valid = True
 
     def _validate(self):
         # check client_id
@@ -216,7 +215,7 @@ class ClientAuthorizationView(View):
             raise InvalidAuthorizationRequest('response_type is a required parameter.')
         if self.query['response_type'] not in ['code', 'token']:
             raise UnsupportedResponseType('No such response type %s' % self.query['response_type'])
-        if self.allowed_response_type & RESPONSE_TYPES[self.query['response_type']] == 0:
+        if self.allowed_response_type & self.RESPONSE_TYPES[self.query['response_type']] == 0:
             raise UnauthorizedResponseType('Response type %s not allowed.' % self.query['response_type'])
         
         # check scope
@@ -287,15 +286,11 @@ class ClientAuthorizationView(View):
 
         *Returns HttpResponseRedirect*
         '''
-        
-        if not self.valid:
-            raise UnvalidatedRequest('This request is invalid or has not been validated.')
-        
         if self.user.is_authenticated():
             parameters = {}
             fragments = {}
             
-            if RESPONSE_TYPES[self.query['response_type']] & constants.CODE != 0:
+            if self.RESPONSE_TYPES[self.query['response_type']] & constants.CODE != 0:
                 code = Code.objects.create(
                     user=self.user,
                     client=self.client,
@@ -306,7 +301,7 @@ class ClientAuthorizationView(View):
                 code.save()
                 parameters['code'] = code.code
             
-            if RESPONSE_TYPES[self.query['response_type']] & constants.TOKEN != 0:
+            if self.RESPONSE_TYPES[self.query['response_type']] & constants.TOKEN != 0:
                 token = Token.objects.create(
                     user=self.user,
                     client=self.client
