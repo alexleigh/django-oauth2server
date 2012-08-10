@@ -52,36 +52,6 @@ class ClientAuthorizationView(View):
         'code': constants.CODE,
         'token': constants.TOKEN
     }
-    
-    @property
-    def query_string(self):
-        '''
-        Returns a url encoded query string useful for resending request
-        parameters when a user authorizes the request via a form POST.
-
-        Raises UnvalidatedRequest if the request has not been validated.
-
-        *Returns str*
-        '''
-        # TODO: remove
-        if not self.valid:
-            raise UnvalidatedRequest('This request is invalid or has not been validated.')
-        
-        parameters = {
-            'response_type': self.query['response_type'],
-            'client_id': self.query['client_id']
-        }
-        
-        if self.query['redirect_uri'] is not None:
-            parameters['redirect_uri'] = self.query['redirect_uri']
-        
-        if self.query['state'] is not None:
-            parameters['state'] = self.query['state']
-        
-        if self.query['scope'] is not None:
-            parameters['scope'] = self.query['scope']
-        
-        return urlencode(parameters)
 
     def __init__(
             self,
@@ -162,6 +132,31 @@ class ClientAuthorizationView(View):
         
         return HttpResponseRedirect('/')
         
+    def get_query_string(self):
+        '''
+        Returns a url encoded query string useful for resending request
+        parameters when a user authorizes the request via a form POST.
+
+        Raises UnvalidatedRequest if the request has not been validated.
+
+        *Returns str*
+        '''
+        parameters = {
+            'response_type': self.query['response_type'],
+            'client_id': self.query['client_id']
+        }
+        
+        if self.query['redirect_uri'] is not None:
+            parameters['redirect_uri'] = self.query['redirect_uri']
+        
+        if self.query['state'] is not None:
+            parameters['state'] = self.query['state']
+        
+        if self.query['scope'] is not None:
+            parameters['scope'] = self.query['scope']
+        
+        return urlencode(parameters)
+    
     def validate(self, request, *args, **kwargs):
         '''
         Validate the request. Raises an AuthorizationException if the
