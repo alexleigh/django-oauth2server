@@ -31,19 +31,6 @@ def decorator(func):
     return func_wrapper
 
 @decorator
-def authenticate(func, *args, **kw):
-    """Authenticate a request with no scope."""
+def authenticate(func, *args, **kwargs):
     raise NotImplementedError()
-    return func(*args, **kw)
-
-
-@decorator
-class authenticate(object):
-    """Authenticate a request with scope."""
-    def __init__(self, *args, **kw):
-        self.args = args
-        self.kw   = kw
-
-    def __call__(self, func):
-        raise NotImplementedError()
-        return func(*self.args, **self.kw)
+    return func(*args, **kwargs)
