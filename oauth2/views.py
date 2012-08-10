@@ -51,13 +51,6 @@ class ClientAuthorizationView(View):
       the scopes the authorizer can grant.
       *Default None*
     '''
-    query = {}
-    user = None
-    client = None
-    redirect_uri = None
-    scopes = []
-    error = None
-    valid = False
 
     @property
     def query_string(self):
@@ -95,6 +88,14 @@ class ClientAuthorizationView(View):
             allowed_response_type=settings.ALLOWED_RESPONSE_TYPE,
             allowed_scopes=None
         ):
+        
+        self.query = {}
+        self.user = None
+        self.client = None
+        self.redirect_uri = None
+        self.scopes = []
+        self.error = None
+        self.valid = False
         
         if authentication_method not in [constants.BEARER, constants.MAC]:
             raise OAuth2Exception('Possible values for authentication_method '
