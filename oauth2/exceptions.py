@@ -4,6 +4,16 @@ class OAuth2Exception(Exception):
     '''
     pass
 
+# TODO: remove
+class UnvalidatedRequest(OAuth2Exception):
+    '''
+    The method requested requires a validated request to continue.
+    '''
+    pass
+
+class MissingClientId(OAuth2Exception):
+    error = 'invalid_request'
+    
 class InvalidClient(OAuth2Exception):
     '''
     Client authentication failed (e.g. unknown client, no client credentials
@@ -13,22 +23,10 @@ class InvalidClient(OAuth2Exception):
     error = 'invalid_client'
 
 class MissingRedirectURI(OAuth2Exception):
-    '''
-    Neither the request nor the client specify a redirect_uri.
-    '''
-    pass
+    error = 'missing_redirect_uri'
 
-class UnauthenticatedUser(OAuth2Exception):
-    '''
-    The provided user is not internally authenticated, via user.is_authenticated().
-    '''
-    pass
-
-class UnvalidatedRequest(OAuth2Exception):
-    '''
-    The method requested requires a validated request to continue.
-    '''
-    pass
+class RedirectURIMismatch(OAuth2Exception):
+    error = 'redirect_uri_mismatch'
 
 class AccessDenied(OAuth2Exception):
     '''
