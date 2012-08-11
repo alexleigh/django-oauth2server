@@ -37,7 +37,7 @@ class ClientAuthorizationView(View):
     **Kwargs:**
 
     * *authentication_method:* Type of token to generate. Possible values are
-      oauth2.constants.MAC and oauth2.constants.BEARER.
+      oauth2.constants.BEARER and oauth2.constants.MAC.
     * *refreshable:* Whether issued tokens are refreshable.
     * *allowed_response_type:* Type of response the authorizer can generate.
       Possible values are oauth2.constants.CODE, oauth2.constants.TOKEN,
@@ -64,7 +64,7 @@ class ClientAuthorizationView(View):
         if self.authentication_method not in [constants.BEARER, constants.MAC]:
             raise OAuth2Exception(
                 'Possible values for authentication_method are '
-                'oauth2.constants.MAC and oauth2.constants.BEARER.'
+                'oauth2.constants.BEARER and oauth2.constants.MAC.'
             )
         
         if self.allowed_response_type not in [
@@ -298,125 +298,120 @@ class ClientAuthorizationView(View):
     
 class TokenView(View):
     '''
-    Token access handler. Validates authorization codes, refresh tokens,
+    Token generation. Validates authorization codes, refresh tokens,
     username/password pairs, and generates a JSON formatted authorization code.
 
-    **Args:**
-
-    * *request:* Django HttpRequest object.
-
     **Kwargs:**
-
-    * *scope:* An iterable of oauth2app.models.AccessRange objects representing
-      the scope the token generator will grant. *Default None*
-    * *authentication_method:* Type of token to generate. Possible
-      values are: oauth2.constants.BEARER and oauth2.constants.MAC
-    * *refreshable:* Boolean value indicating whether issued tokens are
-      refreshable.
+    * *authentication_method:* Type of token to generate. Possible values are
+      oauth2.constants.BEARER and oauth2.constants.MAC.
+    * *refreshable:* Whether issued tokens are refreshable.
+    * *allowed_scopes:* An iterable of oauth2.models.Scope objects representing
+      the scopes the token generator can grant. None means no limit, an empty
+      list means the generator can only grant requests with no scopes.
+      *Default None*
     '''
-    client = None
-    user = None
-    code = None
-    token = None
-    scopes = []
-    valid = False
-    error = None
+    authentication_method=settings.AUTHENTICATION_METHOD,
+    refreshable=settings.REFRESHABLE,
+    allowed_scopes=None
+    
+    def __init__(self, **kwargs):
+        for key, value in kwargs.iteritems():
+            setattr(self, key, value)
 
-    def __init__(
-            self,
-            authentication_method=settings.AUTHENTICATION_METHOD,
-            refreshable=settings.REFRESHABLE,
-            allowed_scopes=None
-        ):
-        self.refreshable = refreshable
-        
-        if authentication_method not in [constants.BEARER, constants.MAC]:
-            raise OAuth2Exception("Possible values for authentication_method"
-                " are oauth2.constants.MAC and oauth2.constants.BEARER")
-        self.authentication_method = authentication_method
-        
-        self.allowed_scopes = allowed_scopes
+        if self.authentication_method not in [constants.BEARER, constants.MAC]:
+            raise OAuth2Exception(
+                'Possible values for authentication_method are '
+                'oauth2.constants.BEARER and oauth2.constants.MAC.'
+            )
 
     @method_decorator(csrf_exempt)
     def dispatch(self, *args, **kwargs):
         return super(TokenView, self).dispatch(*args, **kwargs)
     
-    def get(self, request, *args, **kwargs):
-        return self.valiate(request)
-    
-    def validate(self, request):
-        '''
-        Validate the request. Raises an AccessTokenException if the
-        request fails authorization.
-
-        *Returns None*
-        '''
-        self.grant_type = request.REQUEST.get('grant_type')
-        self.client_id = request.REQUEST.get('client_id')
-        self.client_secret = request.POST.get('client_secret')
-        self.scope = request.REQUEST.get('scope')
+    def post(self, request):
+        query = {
+            'client_id': request.POST.get('client_id'),
+            'client_secret': request.POST.get('client_secret'),
+            'grant_type': request.REQUEST.get('grant_type')
+        }
         
-        self.http_authorization = self.request.META['HTTP_AUTHORIZATION']
+        if 'scope' in request.GET:
+            query['scope'] = request.POST.get('scope')
+            
+        query['http_authorization'] = request.META['HTTP_AUTHORIZATION']
         
         # authorization_code, see 4.1.3.  Access Token Request
-        self.authorization_code = request.REQUEST.get('code')
-        self.redirect_uri = request.REQUEST.get('redirect_uri')
+        query['authorization_code'] = request.REQUEST.get('code')
+        query['redirect_uri'] = request.REQUEST.get('redirect_uri')
         
         # refresh_token, see 6.  Refreshing an Access Token
-        self.refresh_token = request.REQUEST.get('refresh_token')
+        query['refresh_token'] = request.REQUEST.get('refresh_token')
         
         # password, see 4.3.2. Access Token Request
-        self.email = request.REQUEST.get('email')
-        self.username = request.REQUEST.get('username')
-        self.password = request.REQUEST.get('password')
+        query['email'] = request.REQUEST.get('email')
+        query['username'] = request.REQUEST.get('username')
+        query['password'] = request.REQUEST.get('password')
         
         # optional json callback
-        self.callback = request.REQUEST.get('callback')
+        query['callback'] = request.REQUEST.get('callback')
         
         try:
-            self._validate()
-        except (InvalidTokenRequest, UnsupportedGrantType, InvalidGrant, InvalidClient, InvalidScope, UnauthorizedScope) as e:
-            self.error = e
-            return self.error_response()
+            self.validate(query)
         
-        self.valid = True
+        except OAuth2Exception as e:
+            return self.error_response(e)
+        
         return self.grant_response()
 
-    def _validate(self):
-        # check client
-        if self.client_id is None:
-            raise InvalidTokenRequest('No client_id')
+    def validate(self, query):
+        # check client_id
+        client = None
+        if query['client_id'] is None:
+            raise InvalidClientId('Missing required parameter: client_id')
         try:
-            self.client = Client.objects.get(client_id=self.client_id)
+            client = Client.objects.get(client_id=query['client_id'])
         except Client.DoesNotExist:
-            raise InvalidClient('client_id %s doesn\'t exist' % self.client_id)
+            raise InvalidClient('client_id %s doesn\'t exist' % query['client_id'])
         
         # check scope
-        if self.scope is not None:
-            scope_names = set(self.scope.split())
+        scopes = []
+        if 'scope' in query and query['scope'] is not None:
+            scope_names = set(query['scope'].split())
             invalid_scope_names = []
             for scope_name in scope_names:
                 try:
                     scope = Scope.objects.get(name=scope_name)
-                    self.scopes.append(scope)
+                    scopes.append(scope)
                 except Scope.DoesNotExist:
                     invalid_scope_names.append(scope_name)
             if len(invalid_scope_names) > 0:
                 raise InvalidScope('The following scopes do not exist: %s' % ', '.join(invalid_scope_names))
+            if self.allowed_scopes is not None:
+                allowed_scope_names = set(self.allowed_scopes.values_list('name', flat=True))
+                disallowed_scope_names = scope_names - allowed_scope_names
+                if len(disallowed_scope_names) > 0:
+                    raise InvalidScope('The following scopes cannot be requested: %s' % ','.join(disallowed_scope_names))
         
         # check grant type
         if self.grant_type is None:
             raise InvalidTokenRequest('No grant_type provided.')
+        
         if self.grant_type == 'authorization_code':
             self._validate_authorization_code()
+            
         elif self.grant_type == 'refresh_token':
             self._validate_refresh_token()
+            
         elif self.grant_type == 'password':
             self._validate_password()
+            
         elif self.grant_type == 'client_credentials':
             self._validate_client_credentials()
+            
         else:
             raise UnsupportedGrantType('No such grant type: %s' % self.grant_type)
+        
+        return (client, scopes)
 
     def _validate_access_credentials(self):
         """Validate the request's access credentials."""
@@ -473,7 +468,7 @@ class TokenView(View):
                 allowed_scope_names = set(self.allowed_scopes.values_list('name', flat=True))
                 disallowed_scope_names = scope_names - allowed_scope_names
                 if len(disallowed_scope_names) > 0:
-                    raise UnauthorizedScope('The following scopes cannot be requested: %s' % ','.join(disallowed_scope_names))
+                    raise InvalidScope('The following scopes cannot be requested: %s' % ','.join(disallowed_scope_names))
 
         if "HTTP_AUTHORIZATION" in self.request.META:
             authorization = self.request.META["HTTP_AUTHORIZATION"]
@@ -520,7 +515,7 @@ class TokenView(View):
             allowed_scope_names = set(self.token.scopes.all().values_list('name', flat=True))
             disallowed_scope_names = scope_names - allowed_scope_names
             if len(disallowed_scope_names) > 0:
-                raise UnauthorizedScope('Refresh request requested scopes beyond initial grant: %s' % disallowed_scope_names)
+                raise InvalidScope('Refresh request requested scopes beyond initial grant: %s' % disallowed_scope_names)
 
     def error_response(self):
         """In the event of an error, return a Django HttpResponse
@@ -549,12 +544,9 @@ class TokenView(View):
             return response
 
     def grant_response(self):
-        """Returns a JSON formatted authorization code."""
-        # TODO: remove
-        if not self.valid:
-            raise UnvalidatedRequest("This request is invalid or has not been"
-                " validated.")
-        
+        '''
+        Returns a JSON formatted authorization code.
+        '''
         if self.grant_type == "authorization_code":
             access_token = self._get_authorization_code_token()
         elif self.grant_type == "refresh_token":
@@ -594,7 +586,9 @@ class TokenView(View):
         return response
 
     def _get_authorization_code_token(self):
-        """Generate an access token after authorization_code authorization."""
+        '''
+        Generate an access token after authorization_code authorization.
+        '''
         access_token = Token.objects.create(
             user=self.code.user,
             client=self.client,
