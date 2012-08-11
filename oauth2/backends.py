@@ -10,7 +10,7 @@ from . import constants
 from . import settings
 from .models import Scope, Token
 from .utils import TimestampGenerator
-from .exceptions import OAuth2Exception, UnvalidatedRequest, InvalidAccessRequest, InvalidToken, InsufficientScope
+from .exceptions import OAuth2Exception, InvalidAccessRequest, InvalidToken, InsufficientScope
 
 log = logging.getLogger(__name__)
 

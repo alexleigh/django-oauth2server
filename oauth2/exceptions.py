@@ -4,48 +4,59 @@ class OAuth2Exception(Exception):
     '''
     pass
 
-# TODO: remove
-class UnvalidatedRequest(OAuth2Exception):
+class OAuth2ClientException(OAuth2Exception):
     '''
-    The method requested requires a validated request to continue.
+    Exceptions related to client authentication. These exceptions should result
+    in an error page being displayed, rather than a redirect to the requesting
+    client.
     '''
     pass
 
-class MissingClientId(OAuth2Exception):
+class InvalidClientId(OAuth2ClientException):
+    '''
+    No client_id supplied, or the supplied client_id is malformed.
+    '''
     error = 'invalid_request'
     
-class InvalidClient(OAuth2Exception):
+class InvalidClient(OAuth2ClientException):
     '''
-    Client authentication failed (e.g. unknown client, no client credentials
-    included, multiple client credentials included, or unsupported credentials
-    type).
+    The supplied client_id does not identify a valid client.
     '''
     error = 'invalid_client'
+    
+class OAuth2RedirectURIException(OAuth2Exception):
+    '''
+    Exceptions related to redirect URIs. These exceptions should result in an
+    error page being displayed, rather than a redirect to the requesting
+    client.
+    '''
+    pass
 
-class MissingRedirectURI(OAuth2Exception):
-    error = 'missing_redirect_uri'
+class InvalidRedirectURI(OAuth2RedirectURIException):
+    '''
+    No redirect_uri supplied, or the supplied redirect_uri is malformed.
+    '''
+    error = 'invalid_request'
 
-class RedirectURIMismatch(OAuth2Exception):
+class RedirectURIMismatch(OAuth2RedirectURIException):
+    '''
+    The supplied redirect_uri does not match the registered redirect_uri
+    for the client.
+    '''
     error = 'redirect_uri_mismatch'
 
-class AccessDenied(OAuth2Exception):
+class InvalidResponseType(OAuth2Exception):
     '''
-    The resource owner or authorization server denied the request.
+    No response_type supplied, or the supplied response_type is invalid,
+    unknown, malformed, or not authorized.
     '''
-    error = 'access_denied'
-
+    error = 'invalid_request'
+    
 class InvalidScope(OAuth2Exception):
     '''
     The requested scope is invalid, unknown, or malformed.
     '''
     error = 'invalid_scope'
-
-class UnauthorizedScope(OAuth2Exception):
-    '''
-    The requested scope exceeds the scope allowed by the authorization server
-    or the resource owner.
-    '''
-    error = 'unauthorized_scope'
 
 class InsufficientScope(OAuth2Exception):
     '''
@@ -53,12 +64,26 @@ class InsufficientScope(OAuth2Exception):
     '''
     error = 'insufficient_scope'
 
-class InvalidAuthorizationRequest(OAuth2Exception):
+class InvalidGrant(OAuth2Exception):
     '''
-    The request is missing a required parameter, includes an unsupported
-    parameter or parameter value, or is otherwise malformed.
+    The provided authorization grant is invalid, expired, revoked, does not
+    match the redirection URI used in the authorization request, or was issued
+    to another client.
     '''
-    error = 'invalid_request'
+    error = 'invalid_grant'
+
+class InvalidToken(OAuth2Exception):
+    '''
+    The access token provided is expired, revoked, malformed, or otherwise
+    invalid.
+    '''
+    error = 'invalid_token'
+
+class UnsupportedGrantType(OAuth2Exception):
+    '''
+    The authorization grant type is not supported by the authorization server.
+    '''
+    error = 'unsupported_grant_type'
 
 class InvalidTokenRequest(OAuth2Exception):
     '''
@@ -78,37 +103,3 @@ class InvalidAccessRequest(OAuth2Exception):
     token, or is otherwise malformed.
     '''
     error = 'invalid_request'
-
-class InvalidGrant(OAuth2Exception):
-    '''
-    The provided authorization grant is invalid, expired, revoked, does not
-    match the redirection URI used in the authorization request, or was issued
-    to another client.
-    '''
-    error = 'invalid_grant'
-
-class InvalidToken(OAuth2Exception):
-    '''
-    The access token provided is expired, revoked, malformed, or otherwise
-    invalid.
-    '''
-    error = 'invalid_token'
-
-class UnsupportedResponseType(OAuth2Exception):
-    '''
-    The authorization response type is not supported by the authorization server.
-    '''
-    error = 'unsupported_response_type'
-
-class UnauthorizedResponseType(OAuth2Exception):
-    '''
-    The client is not authorized to request an authorization code using this
-    method.
-    '''
-    error = 'unauthorized_response_type'
-
-class UnsupportedGrantType(OAuth2Exception):
-    '''
-    The authorization grant type is not supported by the authorization server.
-    '''
-    error = 'unsupported_grant_type'
