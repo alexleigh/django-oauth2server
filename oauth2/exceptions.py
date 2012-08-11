@@ -2,8 +2,14 @@ class OAuth2Exception(Exception):
     '''
     OAuth2 exception base class.
     '''
-    pass
+    error = 'oauth2_error'
 
+class AccessDenied(OAuth2Exception):
+    error = 'access_denied'
+
+class AuthenticationFailed(OAuth2Exception):
+    error = 'authentication_failed'
+    
 class OAuth2ClientException(OAuth2Exception):
     '''
     Exceptions related to client authentication. These exceptions should result
@@ -58,12 +64,12 @@ class InvalidScope(OAuth2Exception):
     '''
     error = 'invalid_scope'
 
-class InsufficientScope(OAuth2Exception):
+class InvalidGrantType(OAuth2Exception):
     '''
-    The request requires more scopes than those provided by the access token.
+    No grant type supplied, or the grant type is not supported by the server.
     '''
-    error = 'insufficient_scope'
-
+    error = 'invalid_request'
+    
 class InvalidGrant(OAuth2Exception):
     '''
     The provided authorization grant is invalid, expired, revoked, does not
@@ -79,22 +85,6 @@ class InvalidToken(OAuth2Exception):
     '''
     error = 'invalid_token'
 
-class UnsupportedGrantType(OAuth2Exception):
-    '''
-    The authorization grant type is not supported by the authorization server.
-    '''
-    error = 'unsupported_grant_type'
-
-class InvalidTokenRequest(OAuth2Exception):
-    '''
-    The request is missing a required parameter, includes an
-    unsupported parameter or parameter value, repeats a
-    parameter, includes multiple credentials, utilizes more
-    than one mechanism for authenticating the client, or is
-    otherwise malformed.
-    '''
-    error = 'invalid_request'
-
 class InvalidAccessRequest(OAuth2Exception):
     '''
     The request is missing a required parameter, includes an
@@ -103,3 +93,9 @@ class InvalidAccessRequest(OAuth2Exception):
     token, or is otherwise malformed.
     '''
     error = 'invalid_request'
+    
+class InsufficientScope(OAuth2Exception):
+    '''
+    The request requires more scopes than those provided by the access token.
+    '''
+    error = 'insufficient_scope'

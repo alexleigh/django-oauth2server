@@ -18,9 +18,10 @@ from .forms import AuthorizationForm
 from .utils import KeyGenerator, TimestampGenerator
 from .utils.uri import add_parameters, add_fragments, normalize
 from .exceptions import OAuth2Exception, OAuth2ClientException, OAuth2RedirectURIException
+from .exceptions import AccessDenied, AuthenticationFailed
 from .exceptions import InvalidClientId, InvalidClient, InvalidRedirectURI, RedirectURIMismatch
 from .exceptions import InvalidResponseType, InvalidScope
-from .exceptions import InvalidTokenRequest, UnsupportedGrantType, InvalidGrant
+from .exceptions import InvalidGrantType, InvalidGrant
 
 log = logging.getLogger(__name__)
 
@@ -130,6 +131,31 @@ class ClientAuthorizationView(View):
 
         return (client, scopes)
     
+    def error_response(self, query, error):
+        context = {
+            'query': query,
+            'error': error.error,
+            'error_description': u'%s' % error.message
+        }
+        return render_to_response('oauth2/error.html', context, RequestContext(self.request))
+    
+    def error_redirect(self, query, error):
+        parameters = {
+            'error': error.error,
+            'error_description': u'%s' % error.message
+        }
+    
+        if 'state' in query:
+            parameters['state'] = query['state']
+    
+        if self.authorized_response_type & constants.CODE != 0:
+            redirect_uri = add_parameters(query['redirect_uri'], parameters)
+    
+        if self.authorized_response_type & constants.TOKEN != 0:
+            redirect_uri = add_fragments(query['redirect_uri'], parameters)
+    
+        return HttpResponseRedirect(redirect_uri)
+    
     def get(self, request):
         query = {
             'client_id': request.GET.get('client_id'),
@@ -148,29 +174,11 @@ class ClientAuthorizationView(View):
         
         # do not redirect to requesting client for these errors
         except (OAuth2ClientException, OAuth2RedirectURIException) as e:
-            context = {
-                'error': e.error,
-                'error_description': u'%s' % e.message
-            }
-            return render_to_response('oauth2/error.html', context, RequestContext(request))
+            return self.error_response(query, e)
         
         # redirect to requesting client for other kinds of oauth2 errors
         except OAuth2Exception as e:
-            parameters = {
-                'error': e.error,
-                'error_description': u'%s' % e.message
-            }
-        
-            if 'state' in query:
-                parameters['state'] = query['state']
-        
-            if self.authorized_response_type & constants.CODE != 0:
-                redirect_uri = add_parameters(query['redirect_uri'], parameters)
-        
-            if self.authorized_response_type & constants.TOKEN != 0:
-                redirect_uri = add_fragments(query['redirect_uri'], parameters)
-        
-            return HttpResponseRedirect(redirect_uri)
+            return self.error_redirect(query, e)
         
         form_action = '/oauth2/authorize/?%s' % urlencode(query)
         context = {
@@ -199,29 +207,11 @@ class ClientAuthorizationView(View):
             
         # do not redirect to requesting client for these errors
         except (OAuth2ClientException, OAuth2RedirectURIException) as e:
-            context = {
-                'error': e.error,
-                'error_description': u'%s' % e.message
-            }
-            return render_to_response('oauth2/error.html', context, RequestContext(request))
+            return self.error_response(query, e)
         
         # redirect to requesting client for other kinds of oauth2 errors
         except OAuth2Exception as e:
-            parameters = {
-                'error': e.error,
-                'error_description': u'%s' % e.message
-            }
-        
-            if 'state' in query:
-                parameters['state'] = query['state']
-        
-            if self.authorized_response_type & constants.CODE != 0:
-                redirect_uri = add_parameters(query['redirect_uri'], parameters)
-        
-            if self.authorized_response_type & constants.TOKEN != 0:
-                redirect_uri = add_fragments(query['redirect_uri'], parameters)
-        
-            return HttpResponseRedirect(redirect_uri)
+            return self.error_redirect(query, e)
         
         form = AuthorizationForm(request.POST)
         
@@ -274,27 +264,9 @@ class ClientAuthorizationView(View):
                 return HttpResponseRedirect(redirect_uri)
             
             else:
-                parameters = {
-                    'error': 'access_denied',
-                    'error_description': 'Access denied'
-                }
+                return self.error_redirect(query, AccessDenied('Access denied'))
         
-                if 'state' in query:
-                    parameters['state'] = query['state']
-        
-                if self.authorized_response_type & constants.CODE != 0:
-                    redirect_uri = add_parameters(query['redirect_uri'], parameters)
-        
-                if self.authorized_response_type & constants.TOKEN != 0:
-                    redirect_uri = add_fragments(query['redirect_uri'], parameters)
-        
-                return HttpResponseRedirect(redirect_uri)
-        
-        context = {
-            'error': 'unknown',
-            'error_description': 'The request cannot be processed'
-        }
-        return render_to_response('oauth2/error.html', context, RequestContext(request))
+        return self.error_response(query, OAuth2Exception('Unknown error'))
     
 class TokenView(View):
     '''
@@ -394,7 +366,7 @@ class TokenView(View):
         
         # check grant type
         if self.grant_type is None:
-            raise InvalidTokenRequest('No grant_type provided.')
+            raise InvalidGrantType('Missing required parameter: grant_type')
         
         if self.grant_type == 'authorization_code':
             self._validate_authorization_code()
@@ -409,7 +381,7 @@ class TokenView(View):
             self._validate_client_credentials()
             
         else:
-            raise UnsupportedGrantType('No such grant type: %s' % self.grant_type)
+            raise InvalidGrantType('No such grant type: %s' % self.grant_type)
         
         return (client, scopes)
 
@@ -434,14 +406,14 @@ class TokenView(View):
     def _validate_authorization_code(self):
         """Validate an authorization_code request."""
         if self.authorization_code is None:
-            raise InvalidTokenRequest('No authorization_code provided')
+            raise InvalidGrant('No authorization_code provided')
         
         self._validate_access_credentials()
         
         try:
             self.code = Code.objects.get(code=self.authorization_code)
         except Code.DoesNotExist:
-            raise InvalidTokenRequest('No such code: %s' % self.authorization_code)
+            raise InvalidGrant('No such code: %s' % self.authorization_code)
         
         now = TimestampGenerator()()
         if self.code.expire < now:
@@ -450,17 +422,17 @@ class TokenView(View):
         self.scopes = self.code.scopes.all()
         
         if self.redirect_uri is None:
-            raise InvalidTokenRequest('No redirect_uri')
+            raise InvalidRedirectURI('No redirect_uri')
         
         if normalize(self.redirect_uri) != normalize(self.code.redirect_uri):
-            raise InvalidTokenRequest("redirect_uri doesn't match")
+            raise RedirectURIMismatch("redirect_uri doesn't match")
 
     def _validate_password(self):
         """Validate a password request."""
         if self.username is None and self.email is None:
-            raise InvalidTokenRequest('No username')
+            raise AuthenticationFailed('No username')
         if self.password is None:
-            raise InvalidTokenRequest('No password')
+            raise AuthenticationFailed('No password')
         
         if len(self.scopes) > 0:
             if self.allowed_scopes is not None:
@@ -489,21 +461,21 @@ class TokenView(View):
         
         if user is not None:
             if not user.is_active:
-                raise InvalidTokenRequest('Inactive user.')
+                raise AuthenticationFailed('Inactive user.')
         else:
-            raise InvalidTokenRequest('User authentication failed.')
+            raise AuthenticationFailed('User authentication failed.')
         
         self.user = user
 
     def _validate_refresh_token(self):
         """Validate a refresh token request."""
         if self.refresh_token is None:
-            raise InvalidTokenRequest('No refresh_token')
+            raise InvalidGrant('No refresh_token')
         
         try:
             self.token = Token.objects.get(refresh_token=self.refresh_token)
         except Token.DoesNotExist:
-            raise InvalidTokenRequest('No such refresh token: %s' % self.refresh_token)
+            raise InvalidGrant('No such refresh token: %s' % self.refresh_token)
         
         self._validate_access_credentials()
         
@@ -525,7 +497,7 @@ class TokenView(View):
         if self.error is not None:
             e = self.error
         else:
-            e = InvalidTokenRequest("Access Denied.")
+            e = AccessDenied('Access Denied.')
         data = {'error': e.error, 'error_description': u'%s' % e.message}
         json_data = dumps(data)
         if self.callback is not None:

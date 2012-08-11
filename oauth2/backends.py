@@ -21,7 +21,7 @@ class Validator(object):
 
     **Kwargs:**
 
-    * *scope:* An iterable of oauth2.models.AccessRange objects representing
+    * *scopes:* An iterable of oauth2.models.Scope objects representing
       the scope the authenticator will authenticate.
       *Default None*
     * *authentication_method:* Accepted authentication methods. Possible
