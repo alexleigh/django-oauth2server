@@ -12,8 +12,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.generic import View
 from django.utils.decorators import method_decorator
 
-from . import constants
-from . import settings
+from . import constants, settings
 from .models import Client, Scope, Code, Token
 from .forms import AuthorizationForm
 from .utils import KeyGenerator, TimestampGenerator
@@ -24,6 +23,8 @@ from .exceptions import InvalidTokenRequest, UnsupportedGrantType, InvalidGrant
 
 log = logging.getLogger(__name__)
 
+from django.utils.functional import update_wrapper
+from django.utils.decorators import classonlymethod
 
 @login_required
 def missing_redirect_uri(request):
@@ -60,7 +61,7 @@ class ClientAuthorizationView(View):
             allowed_response_type=settings.ALLOWED_RESPONSE_TYPE,
             allowed_scopes=None
         ):
-        
+        log.debug('entering __init__')
         self.query = {}
         self.user = None
         self.client = None
@@ -82,7 +83,37 @@ class ClientAuthorizationView(View):
         self.allowed_response_type = allowed_response_type
         
         self.allowed_scopes = allowed_scopes
+        log.debug('exiting __init__')
 
+    @classonlymethod
+    def as_view(cls, **initkwargs):
+        """
+        Main entry point for a request-response process.
+        """
+        # sanitize keyword arguments
+        log.debug('entering as_view')
+        for key in initkwargs:
+            if key in cls.http_method_names:
+                raise TypeError(u"You tried to pass in the %s method name as a "
+                                u"keyword argument to %s(). Don't do that."
+                                % (key, cls.__name__))
+            if not hasattr(cls, key):
+                raise TypeError(u"%s() received an invalid keyword %r" % (
+                    cls.__name__, key))
+
+        def view(request, *args, **kwargs):
+            self = cls(**initkwargs)
+            return self.dispatch(request, *args, **kwargs)
+
+        # take name and docstring from class
+        update_wrapper(view, cls, updated=())
+
+        # and possible attributes set by decorators
+        # like csrf_exempt from dispatch
+        update_wrapper(view, cls.dispatch, assigned=())
+        log.debug('exiting as_view')
+        return view
+    
     @method_decorator(login_required)
     def dispatch(self, *args, **kwargs):
         return super(ClientAuthorizationView, self).dispatch(*args, **kwargs)
@@ -92,12 +123,12 @@ class ClientAuthorizationView(View):
             self.validate(request, *args, **kwargs)
         
         except MissingRedirectURI as e:
-            log.info('Authorization error %s' % e)
+            log.info('Client authorization error: %s' % e)
             return HttpResponseRedirect('/oauth2/missing_redirect_uri/')
         
         except (InvalidClient, InvalidScope, UnauthorizedScope, InvalidAuthorizationRequest, UnsupportedResponseType, UnauthorizedResponseType, AccessDenied) as e:
             # The request is malformed or invalid. Automatically redirect to the provided redirect URI.
-            log.info('Authorization error %s' % e)
+            log.info('Client authorization error: %s' % e)
             return self.error_redirect()
         
         # Make sure the authorizer has validated before requesting the client or scopes as otherwise they will be None.
@@ -586,6 +617,7 @@ class TokenView(View):
 
     def grant_response(self):
         """Returns a JSON formatted authorization code."""
+        # TODO: remove
         if not self.valid:
             raise UnvalidatedRequest("This request is invalid or has not been"
                 " validated.")
