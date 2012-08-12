@@ -25,10 +25,6 @@ from .exceptions import InvalidGrantType, InvalidGrant
 
 log = logging.getLogger(__name__)
 
-@login_required
-def missing_redirect_uri(request):
-    return render_to_response('oauth2/missing_redirect_uri.html', context_instance=RequestContext(request))
-
 class ClientAuthorizationView(View):
     '''
     Client authorization. Validates access credentials and generates a response
@@ -148,10 +144,10 @@ class ClientAuthorizationView(View):
         if 'state' in query:
             parameters['state'] = query['state']
     
-        if self.authorized_response_type & constants.CODE != 0:
+        if self.allowed_response_type & constants.CODE != 0:
             redirect_uri = add_parameters(query['redirect_uri'], parameters)
     
-        if self.authorized_response_type & constants.TOKEN != 0:
+        if self.allowed_response_type & constants.TOKEN != 0:
             redirect_uri = add_fragments(query['redirect_uri'], parameters)
     
         return HttpResponseRedirect(redirect_uri)
