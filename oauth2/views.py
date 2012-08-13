@@ -364,27 +364,31 @@ class TokenView(View):
         return code
         
     def validate_refresh_token(self, request):
+        # authenticate client
+        client = self.authenticate_client(request)
+        
+        if client is None:
+            if self.requires_client_authentication:
+                raise InvalidClient('Client authentication failed')
+            
         # check refresh token
         refresh_token = request.POST.get('refresh_token')
-        if self.refresh_token is None:
-            raise InvalidGrant('No refresh_token')
-        
+        if refresh_token is None:
+            raise InvalidGrant('Missing required parameter: refresh_token')
         try:
-            self.token = Token.objects.get(refresh_token=self.refresh_token)
+            token = Token.objects.get(refresh_token=refresh_token)
         except Token.DoesNotExist:
-            raise InvalidGrant('No such refresh token: %s' % self.refresh_token)
-        
-        self._validate_access_credentials()
-        
-        if not self.token.refreshable:
+            raise InvalidGrant('No such refresh token: %s' % refresh_token)
+        if not token.refreshable:
             raise InvalidGrant('Access token is not refreshable.')
         
         # check scope
-        if 'scope' in request.POST:
-            scope = request.POST['scope']
+        scope = request.POST.get('scope')
         scopes = []
-        if 'scope' in query and query['scope'] is not None:
-            scope_names = set(query['scope'].split())
+        if scope is None:
+            scopes = token.scopes.all()
+        else:
+            scope_names = set(scope.split())
             invalid_scope_names = []
             for scope_name in scope_names:
                 try:
@@ -394,10 +398,12 @@ class TokenView(View):
                     invalid_scope_names.append(scope_name)
             if len(invalid_scope_names) > 0:
                 raise InvalidScope('The following scopes do not exist: %s' % ', '.join(invalid_scope_names))
-            allowed_scope_names = set(self.token.scopes.all().values_list('name', flat=True))
+            allowed_scope_names = set(token.scopes.all().values_list('name', flat=True))
             disallowed_scope_names = scope_names - allowed_scope_names
             if len(disallowed_scope_names) > 0:
                 raise InvalidScope('Refresh request requested scopes beyond initial grant: %s' % disallowed_scope_names)
+        
+        return (token, scopes)
 
     def validate_password(self, request):
         # authenticate client
@@ -529,23 +535,18 @@ class TokenView(View):
         # refresh_token, see 6. Refreshing an Access Token
         elif grant_type == 'refresh_token':
             try:
-                self.validate_refresh_token(request)
+                token, scopes = self.validate_refresh_token(request)
             
             except OAuth2Exception as e:
-                return self.error_response(e)
+                return self.error_response(e, callback)
             
-            self.access_token.token = KeyGenerator(settings.ACCESS_TOKEN_LENGTH)()
-            self.access_token.refresh_token = KeyGenerator(settings.REFRESH_TOKEN_LENGTH)()
-            self.access_token.expire = TimestampGenerator(settings.ACCESS_TOKEN_EXPIRATION)()
-            
-            access_ranges = Scope.objects.filter(key__in=self.scope) if self.scope else [] # TODO: fix
-            self.access_token.scope = access_ranges
-            
-            self.access_token.save()
-            
-            return self.access_token
+            token.access_token = KeyGenerator(settings.ACCESS_TOKEN_LENGTH)()
+            token.refresh_token = KeyGenerator(settings.REFRESH_TOKEN_LENGTH)()
+            token.expire = TimestampGenerator(settings.ACCESS_TOKEN_EXPIRATION)()
+            token.scopes = [ scope.id for scope in scopes ]
+            token.save()
         
-            return self.grant_response()
+            return self.grant_response(token, callback)
             
         # password, see 4.3.2. Access Token Request
         elif grant_type == 'password':
