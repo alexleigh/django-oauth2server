@@ -13,46 +13,51 @@ class Client(models.Model):
     '''
     Stores client data.
 
-    **Args:**
-
-    * *name:* A string representing the client name.
-    * *owner:* A django.contrib.auth.models.User object representing the client
-       owner.
-
     **Kwargs:**
-
-    * *description:* A string representing the client description.
-      *Default None*
-    * *key:* A string representing the client key. *Default 30 character
+    * *client_id:* A string representing the client id. *Default 30 character
       random string*
-    * *secret:* A string representing the client secret. *Default 30 character
+    * *client_secret:* A string representing the client secret. *Default 30 character
       random string*
     * *redirect_uri:* A string representing the client redirect_uri.
       *Default None*
+    * *client_type:* A string representing the client type. *Default web*
+    * *name:* A string representing the client name.
+    * *description:* A string representing the client description.
+      *Default None*
+    * *owner:* A django.contrib.auth.models.User object representing the client
+       owner.
     '''
-    name = models.CharField(max_length=256)
-    description = models.TextField(blank=True)
-    redirect_uri = models.URLField(null=True)
+    client_id = models.CharField(
+        max_length=CLIENT_ID_LENGTH,
+        default=KeyGenerator(CLIENT_ID_LENGTH),
+        primary_key=True,
+        unique=True,
+        db_index=True
+    )
+    
+    client_secret = models.CharField(
+        max_length=CLIENT_SECRET_LENGTH,
+        default=KeyGenerator(CLIENT_SECRET_LENGTH),
+        unique=True,
+        blank=True
+    )
     
     CLIENT_TYPE = Choices(
         ('web', 'Web application'),
         ('installed', 'Installed application'),
         ('service', 'Service account'),
     )
-    client_type = models.CharField(max_length=20, choices=CLIENT_TYPE)
-    
-    client_id = models.CharField(
-        unique=True,
-        max_length=CLIENT_ID_LENGTH,
-        default=KeyGenerator(CLIENT_ID_LENGTH),
-        db_index=True
+    client_type = models.CharField(
+        max_length=20,
+        choices=CLIENT_TYPE,
+        default=CLIENT_TYPE.web
     )
     
-    secret = models.CharField(
-        unique=True,
-        max_length=CLIENT_SECRET_LENGTH,
-        default=KeyGenerator(CLIENT_SECRET_LENGTH)
-    )
+    redirect_uri = models.URLField(null=True)
+    
+    name = models.CharField(max_length=255, unique=True)
+    
+    description = models.TextField(blank=True)
     
     owner = models.ForeignKey(User, null=True, blank=True)
 
@@ -70,7 +75,12 @@ class Scope(models.Model):
     * *description:* A string representing the scope description.
       *Default None*
     '''
-    name = models.CharField(unique=True, db_index=True, max_length=SCOPE_LENGTH)
+    name = models.CharField(
+        max_length=SCOPE_LENGTH,
+        unique=True,
+        db_index=True
+    )
+    
     description = models.TextField(blank=True)
 
 class Code(models.Model):
@@ -92,24 +102,29 @@ class Code(models.Model):
       requesting client when the code was issued. *Default None*
     * *scope:* A list of oauth2.models.Scope objects. *Default None*
     '''
-    client = models.ForeignKey(Client)
-    redirect_uri = models.URLField(null=True)
-    user = models.ForeignKey(User)
-    
     code = models.CharField(
-        unique=True,
         max_length=CODE_LENGTH,
         default=KeyGenerator(CODE_LENGTH),
-        db_index=True)
+        unique=True,
+        db_index=True
+    )
     
     issue = models.PositiveIntegerField(
-        editable=False,
-        default=TimestampGenerator())
+        default=TimestampGenerator(),
+        editable=False
+    )
     
     expire = models.PositiveIntegerField(
-        default=TimestampGenerator(CODE_EXPIRATION))
+        default=TimestampGenerator(CODE_EXPIRATION)
+    )
+    
+    redirect_uri = models.URLField(null=True)
     
     scopes = models.ManyToManyField(Scope)
+    
+    client = models.ForeignKey(Client)
+    
+    user = models.ForeignKey(User)
 
 class Token(models.Model):
     '''
@@ -133,41 +148,46 @@ class Token(models.Model):
     * *refreshable:* A boolean that indicates whether this access token is
       refreshable. *Default True*
     '''
-    client = models.ForeignKey(Client)
-    user = models.ForeignKey(User)
-    
     access_token = models.CharField(
-        unique=True,
         max_length=ACCESS_TOKEN_LENGTH,
         default=KeyGenerator(ACCESS_TOKEN_LENGTH),
-        db_index=True)
+        unique=True,
+        db_index=True
+    )
     
     refresh_token = models.CharField(
-        unique=True,
-        blank=True,
-        null=True,
         max_length=REFRESH_TOKEN_LENGTH,
         default=KeyGenerator(REFRESH_TOKEN_LENGTH),
-        db_index=True)
+        unique=True,
+        db_index=True,
+        blank=True
+    )
     
     mac_key = models.CharField(
-        unique=True,
-        blank=True,
-        null=True,
         max_length=MAC_KEY_LENGTH,
-        default=None)
+        default=None,
+        unique=True,
+        db_index=True,
+        blank=True
+    )
     
     issue = models.PositiveIntegerField(
-        editable=False,
-        default=TimestampGenerator())
+        default=TimestampGenerator(),
+        editable=False
+    )
     
     expire = models.PositiveIntegerField(
-        default=TimestampGenerator(ACCESS_TOKEN_EXPIRATION))
+        default=TimestampGenerator(ACCESS_TOKEN_EXPIRATION)
+    )
     
     refreshable = models.BooleanField(default=REFRESHABLE)
     
     scopes = models.ManyToManyField(Scope)
-
+    
+    client = models.ForeignKey(Client)
+    
+    user = models.ForeignKey(User)
+    
 class Nonce(models.Model):
     '''
     Stores nonce strings for use with MAC Authentication.
@@ -177,5 +197,6 @@ class Nonce(models.Model):
     * *token:* An oauth2.models.Token object
     * *nonce:* A unique nonce string.
     '''
-    token = models.ForeignKey(Token)
     nonce = models.CharField(max_length=30, db_index=True)
+    
+    token = models.ForeignKey(Token)

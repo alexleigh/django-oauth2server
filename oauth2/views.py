@@ -1,7 +1,6 @@
 import logging
 from urllib import urlencode
-from base64 import b64encode
-from json import dumps
+from base64 import b64decode
 
 from django.http import HttpResponse, HttpResponseRedirect, absolute_http_url_re
 from django.template import RequestContext
@@ -11,6 +10,7 @@ from django.contrib.auth.decorators import login_required
 from django.views.decorators.csrf import csrf_exempt
 from django.views.generic import View
 from django.utils.decorators import method_decorator
+from django.utils import simplejson
 
 from . import constants, settings
 from .models import Client, Scope, Code, Token
@@ -32,7 +32,6 @@ class ClientAuthorizationView(View):
     access token passed as a URI fragment to the redirect URI, or both.
 
     **Kwargs:**
-
     * *authentication_method:* Type of token to generate. Possible values are
       oauth2.constants.BEARER and oauth2.constants.MAC.
     * *refreshable:* Whether issued tokens are refreshable.
@@ -133,7 +132,13 @@ class ClientAuthorizationView(View):
             'error': error.error,
             'error_description': u'%s' % error.message
         }
-        return render_to_response('oauth2/error.html', context, RequestContext(self.request))
+        
+        response = render_to_response('oauth2/error.html', context, RequestContext(self.request))
+        if isinstance(error, InvalidClient):
+            response.status_code = 401
+        else:
+            response.status_code = 400
+        return response
     
     def error_redirect(self, query, error):
         parameters = {
@@ -160,10 +165,10 @@ class ClientAuthorizationView(View):
         }
         
         if 'scope' in request.GET:
-            query['scope'] = request.GET.get('scope')
+            query['scope'] = request.GET['scope']
             
         if 'state' in request.GET:
-            query['state'] = request.GET.get('scope')
+            query['state'] = request.GET['state']
         
         try:
             client, scopes = self.validate(query)
@@ -193,10 +198,10 @@ class ClientAuthorizationView(View):
         }
         
         if 'scope' in request.GET:
-            query['scope'] = request.GET.get('scope')
+            query['scope'] = request.GET['scope']
             
         if 'state' in request.GET:
-            query['state'] = request.GET.get('scope')
+            query['state'] = request.GET['state']
         
         try:
             client, scopes = self.validate(query)
@@ -229,7 +234,8 @@ class ClientAuthorizationView(View):
                 if self.RESPONSE_TYPES[query['response_type']] & constants.TOKEN != 0:
                     token = Token.objects.create(
                         user=self.request.user,
-                        client=client
+                        client=client,
+                        refreshable=self.REFRESHABLE
                     )
                     token.scopes.add(*scopes)
                     
@@ -267,7 +273,7 @@ class ClientAuthorizationView(View):
 class TokenView(View):
     '''
     Token generation. Validates authorization codes, refresh tokens,
-    username/password pairs, and generates a JSON formatted authorization code.
+    username/password pairs, and generates a JSON formatted response.
 
     **Kwargs:**
     * *authentication_method:* Type of token to generate. Possible values are
@@ -278,8 +284,10 @@ class TokenView(View):
       list means the generator can only grant requests with no scopes.
       *Default None*
     '''
-    authentication_method=settings.AUTHENTICATION_METHOD,
-    refreshable=settings.REFRESHABLE,
+    
+    authentication_method = settings.AUTHENTICATION_METHOD
+    refreshable = settings.REFRESHABLE
+    requires_client_authentication = settings.REQUIRES_CLIENT_AUTHENTICATION
     allowed_scopes=None
     
     def __init__(self, **kwargs):
@@ -296,50 +304,116 @@ class TokenView(View):
     def dispatch(self, *args, **kwargs):
         return super(TokenView, self).dispatch(*args, **kwargs)
     
-    def post(self, request):
-        query = {
-            'client_id': request.POST.get('client_id'),
-            'client_secret': request.POST.get('client_secret'),
-            'grant_type': request.REQUEST.get('grant_type')
-        }
-        
-        if 'scope' in request.GET:
-            query['scope'] = request.POST.get('scope')
+    def authenticate_client(self, request):
+        client_id = request.POST.get('client_id'),
+        client_secret = request.POST.get('client_secret')
             
-        query['http_authorization'] = request.META['HTTP_AUTHORIZATION']
+        if 'HTTP_AUTHORIZATION' in request.META:
+            auth_type, auth_value = request.META['HTTP_AUTHORIZATION'].split()[0:2]
+            if auth_type.lower() == 'basic':
+                credentials = b64decode(auth_value)
+                client_id, client_secret = credentials.split(':')[0:2]
         
-        # authorization_code, see 4.1.3.  Access Token Request
-        query['authorization_code'] = request.REQUEST.get('code')
-        query['redirect_uri'] = request.REQUEST.get('redirect_uri')
+        if client_id is not None:
+            try:
+                client = Client.objects.get(client_id=client_id)
+                if client_secret is not None:
+                    if client_secret == client.client_secret:
+                        return client
+            except Client.DoesNotExist:
+                pass
         
-        # refresh_token, see 6.  Refreshing an Access Token
-        query['refresh_token'] = request.REQUEST.get('refresh_token')
+        return None
+    
+    def validate_authorization_code(self, request):
+        # authenticate client
+        client = self.authenticate_client(request)
         
-        # password, see 4.3.2. Access Token Request
-        query['email'] = request.REQUEST.get('email')
-        query['username'] = request.REQUEST.get('username')
-        query['password'] = request.REQUEST.get('password')
+        if client is None:
+            if self.requires_client_authentication:
+                raise InvalidClient('Client authentication failed')
+            
+            # if the client is not authenticating, the client_id is required, per 4.1.3.
+            client_id = request.POST.get('client_id')
+            if client_id is None:
+                raise InvalidClientId('Missing required parameter: client_id')
+            try:
+                client = Client.objects.get(client_id=client_id)
+            except Client.DoesNotExist:
+                raise InvalidClient('client_id %s doesn\'t exist' % client_id)
         
-        # optional json callback
-        query['callback'] = request.REQUEST.get('callback')
+        # check authorization code
+        authorization_code = request.POST.get('code')
+        if authorization_code is None:
+            raise InvalidGrant('Missing required parameter: authorization_code')
+        try:
+            code = Code.objects.get(code=authorization_code)
+        except Code.DoesNotExist:
+            raise InvalidGrant('No such authorization code: %s' % authorization_code)
+        now = TimestampGenerator()()
+        if code.expire < now:
+            raise InvalidGrant('Provided authorization code is expired')
+        
+        # check redirect uri
+        redirect_uri = request.POST.get('redirect_uri')
+        if redirect_uri is None:
+            raise InvalidRedirectURI('Missing required parameter: redirect_uri')
+        if normalize(redirect_uri) != normalize(code.redirect_uri):
+            raise RedirectURIMismatch('Authorized redirect_uri doesn\'t match provided redirect_uri')
+        
+        return code
+        
+    def validate_refresh_token(self, request):
+        # check refresh token
+        refresh_token = request.POST.get('refresh_token')
+        if self.refresh_token is None:
+            raise InvalidGrant('No refresh_token')
         
         try:
-            self.validate(query)
+            self.token = Token.objects.get(refresh_token=self.refresh_token)
+        except Token.DoesNotExist:
+            raise InvalidGrant('No such refresh token: %s' % self.refresh_token)
         
-        except OAuth2Exception as e:
-            return self.error_response(e)
+        self._validate_access_credentials()
         
-        return self.grant_response()
+        if not self.token.refreshable:
+            raise InvalidGrant('Access token is not refreshable.')
+        
+        # check scope
+        if 'scope' in request.POST:
+            scope = request.POST['scope']
+        scopes = []
+        if 'scope' in query and query['scope'] is not None:
+            scope_names = set(query['scope'].split())
+            invalid_scope_names = []
+            for scope_name in scope_names:
+                try:
+                    scope = Scope.objects.get(name=scope_name)
+                    scopes.append(scope)
+                except Scope.DoesNotExist:
+                    invalid_scope_names.append(scope_name)
+            if len(invalid_scope_names) > 0:
+                raise InvalidScope('The following scopes do not exist: %s' % ', '.join(invalid_scope_names))
+            allowed_scope_names = set(self.token.scopes.all().values_list('name', flat=True))
+            disallowed_scope_names = scope_names - allowed_scope_names
+            if len(disallowed_scope_names) > 0:
+                raise InvalidScope('Refresh request requested scopes beyond initial grant: %s' % disallowed_scope_names)
 
-    def validate(self, query):
-        # check client_id
-        client = None
-        if query['client_id'] is None:
-            raise InvalidClientId('Missing required parameter: client_id')
-        try:
-            client = Client.objects.get(client_id=query['client_id'])
-        except Client.DoesNotExist:
-            raise InvalidClient('client_id %s doesn\'t exist' % query['client_id'])
+    def validate_password(self, request):
+        # authenticate client
+        client = self.authenticate_client(request)
+        
+        username = request.POST.get('username')
+        password = request.POST.get('password')
+        if 'scope' in request.POST:
+            scope = request.POST['scope']
+        
+        
+        if request['username'] is None:
+            raise AuthenticationFailed('No username')
+        
+        if request['password'] is None:
+            raise AuthenticationFailed('No password')
         
         # check scope
         scopes = []
@@ -359,101 +433,8 @@ class TokenView(View):
                 disallowed_scope_names = scope_names - allowed_scope_names
                 if len(disallowed_scope_names) > 0:
                     raise InvalidScope('The following scopes cannot be requested: %s' % ','.join(disallowed_scope_names))
-        
-        # check grant type
-        if self.grant_type is None:
-            raise InvalidGrantType('Missing required parameter: grant_type')
-        
-        if self.grant_type == 'authorization_code':
-            self._validate_authorization_code()
-            
-        elif self.grant_type == 'refresh_token':
-            self._validate_refresh_token()
-            
-        elif self.grant_type == 'password':
-            self._validate_password()
-            
-        elif self.grant_type == 'client_credentials':
-            self._validate_client_credentials()
-            
-        else:
-            raise InvalidGrantType('No such grant type: %s' % self.grant_type)
-        
-        return (client, scopes)
 
-    def _validate_access_credentials(self):
-        """Validate the request's access credentials."""
-        if self.client_secret is None and "HTTP_AUTHORIZATION" in self.request.META:
-            authorization = self.request.META["HTTP_AUTHORIZATION"]
-            auth_type, auth_value = authorization.split()[0:2]
-            if auth_type.lower() == "basic":
-                credentials = "%s:%s" % (self.client.key, self.client.secret)
-                if auth_value != b64encode(credentials):
-                    raise InvalidClient('Client authentication failed.')
-            else:
-                raise InvalidClient('Client authentication failed.')
-        elif self.client_secret != self.client.secret:
-            raise InvalidClient('Client authentication failed.')
-
-    def _validate_client_credentials(self):
-        """Validate a client_credentials request."""
-        self._validate_access_credentials()
-
-    def _validate_authorization_code(self):
-        """Validate an authorization_code request."""
-        if self.authorization_code is None:
-            raise InvalidGrant('No authorization_code provided')
-        
-        self._validate_access_credentials()
-        
-        try:
-            self.code = Code.objects.get(code=self.authorization_code)
-        except Code.DoesNotExist:
-            raise InvalidGrant('No such code: %s' % self.authorization_code)
-        
-        now = TimestampGenerator()()
-        if self.code.expire < now:
-            raise InvalidGrant('Provided code is expired')
-        
-        self.scopes = self.code.scopes.all()
-        
-        if self.redirect_uri is None:
-            raise InvalidRedirectURI('No redirect_uri')
-        
-        if normalize(self.redirect_uri) != normalize(self.code.redirect_uri):
-            raise RedirectURIMismatch("redirect_uri doesn't match")
-
-    def _validate_password(self):
-        """Validate a password request."""
-        if self.username is None and self.email is None:
-            raise AuthenticationFailed('No username')
-        if self.password is None:
-            raise AuthenticationFailed('No password')
-        
-        if len(self.scopes) > 0:
-            if self.allowed_scopes is not None:
-                scope_names = set(self.scopes.values_list('name', flat=True))
-                allowed_scope_names = set(self.allowed_scopes.values_list('name', flat=True))
-                disallowed_scope_names = scope_names - allowed_scope_names
-                if len(disallowed_scope_names) > 0:
-                    raise InvalidScope('The following scopes cannot be requested: %s' % ','.join(disallowed_scope_names))
-
-        if "HTTP_AUTHORIZATION" in self.request.META:
-            authorization = self.request.META["HTTP_AUTHORIZATION"]
-            auth_type, auth_value = authorization.split()[0:2]
-            if auth_type.lower() == "basic":
-                credentials = "%s:%s" % (self.client.key, self.client.secret)
-                if auth_value != b64encode(credentials):
-                    raise InvalidClient('Client authentication failed.')
-            else:
-                raise InvalidClient('Client authentication failed.')
-        else:
-            raise InvalidClient('Client authentication failed.')
-        
-        if self.username is not None:
-            user = authenticate(username=self.username, password=self.password)
-        else:
-            user = authenticate(email=self.email, password=self.password)
+        user = authenticate(username=self.username, password=self.password)
         
         if user is not None:
             if not user.is_active:
@@ -462,161 +443,156 @@ class TokenView(View):
             raise AuthenticationFailed('User authentication failed.')
         
         self.user = user
-
-    def _validate_refresh_token(self):
-        """Validate a refresh token request."""
-        if self.refresh_token is None:
-            raise InvalidGrant('No refresh_token')
+    
+    def validate_client_credentials(self, request):
+        if 'scope' in request.POST:
+            scope = request.POST['scope']
+            
+    def error_response(self, error, callback=None):
+        context = {
+            'error': error.error,
+            'error_description': u'%s' % error.message
+        }
         
-        try:
-            self.token = Token.objects.get(refresh_token=self.refresh_token)
-        except Token.DoesNotExist:
-            raise InvalidGrant('No such refresh token: %s' % self.refresh_token)
+        if callback is not None:
+            json_context = '%s(%s);' % (callback, simplejson.dumps(context))
+            return HttpResponse(json_context, content_type='application/json')
         
-        self._validate_access_credentials()
-        
-        if not self.token.refreshable:
-            raise InvalidGrant("Access token is not refreshable.")
-        
-        if len(self.scopes) > 0:
-            scope_names = set(self.scopes.values_list('name', flat=True))
-            allowed_scope_names = set(self.token.scopes.all().values_list('name', flat=True))
-            disallowed_scope_names = scope_names - allowed_scope_names
-            if len(disallowed_scope_names) > 0:
-                raise InvalidScope('Refresh request requested scopes beyond initial grant: %s' % disallowed_scope_names)
-
-    def error_response(self):
-        """In the event of an error, return a Django HttpResponse
-        with the appropriate JSON encoded error parameters.
-
-        *Returns HttpResponse*"""
-        if self.error is not None:
-            e = self.error
         else:
-            e = AccessDenied('Access Denied.')
-        data = {'error': e.error, 'error_description': u'%s' % e.message}
-        json_data = dumps(data)
-        if self.callback is not None:
-            json_data = "%s(%s);" % (self.callback, json_data)
-            return HttpResponse(
-                content=json_data,
-                content_type='application/json')
-        else:
-            response = HttpResponse(
-                content=json_data,
-                content_type='application/json')
-            if isinstance(self.error, InvalidClient):
+            response = HttpResponse(simplejson.dumps(context), content_type='application/json')
+            if isinstance(error, InvalidClient):
                 response.status_code = 401
             else:
                 response.status_code = 400
             return response
 
-    def grant_response(self):
-        '''
-        Returns a JSON formatted authorization code.
-        '''
-        if self.grant_type == "authorization_code":
-            access_token = self._get_authorization_code_token()
-        elif self.grant_type == "refresh_token":
-            access_token = self._get_refresh_token()
-        elif self.grant_type == "password":
-            access_token = self._get_password_token()
-        elif self.grant_type == "client_credentials":
-            access_token = self._get_client_credentials_token()
-        
-        data = {
-            'access_token': access_token.token,
+    def grant_response(self, token, callback=None):
+        context = {
+            'access_token': token.access_token,
             'expires_in': settings.ACCESS_TOKEN_EXPIRATION
         }
         
         if self.authentication_method == constants.MAC:
-            data["token_type"] = "mac"
-            data["mac_key"] = access_token.mac_key
-            data["mac_algorithm"] = "hmac-sha-256"
+            context['token_type'] = 'mac'
+            context['mac_key'] = token.mac_key
+            context['mac_algorithm'] = 'hmac-sha-256'
+        
         elif self.authentication_method == constants.BEARER:
-            data["token_type"] = "bearer"
+            context['token_type'] = 'bearer'
         
-        if access_token.refreshable:
-            data['refresh_token'] = access_token.refresh_token
+        if token.refreshable:
+            context['refresh_token'] = token.refresh_token
         
-        if self.scope is not None:
-            data['scope'] = ' '.join(self.scope)
+        if token.scopes is not None:
+            context['scope'] = ' '.join(set(token.scopes.values_list('name', flat=True)))
         
-        json_data = dumps(data)
-        if self.callback is not None:
-            json_data = "%s(%s);" % (self.callback, json_data)
+        json_context = simplejson.dumps(context)
+        if callback is not None:
+            json_context = '%s(%s);' % (callback, json_context)
         
-        response = HttpResponse(
-            content=json_data,
-            content_type='application/json'
-        )
+        response = HttpResponse(json_context, content_type='application/json')
         response['Cache-Control'] = 'no-store'
         return response
 
-    def _get_authorization_code_token(self):
-        '''
-        Generate an access token after authorization_code authorization.
-        '''
-        access_token = Token.objects.create(
-            user=self.code.user,
-            client=self.client,
-            refreshable=self.refreshable)
+    def post(self, request):
+        # optional json callback
+        callback = request.POST.get('callback')
         
-        if self.authentication_method == constants.MAC:
-            access_token.mac_key = KeyGenerator(settings.MAC_KEY_LENGTH)()
+        grant_type = request.POST.get('grant_type')
         
-        access_ranges = Scope.objects.filter(key__in=self.scope) if self.scope else [] # TODO: fix
-        access_token.scope = access_ranges
+        if grant_type is None:
+            raise InvalidGrantType('Missing required parameter: grant_type')
         
-        access_token.save()
+        # authorization_code, see 4.1.3. Access Token Request
+        if grant_type == 'authorization_code':
+            try:
+                code = self.validate_authorization_code(request)
+            
+            except OAuth2Exception as e:
+                return self.error_response(e, callback)
+            
+            token = Token.objects.create(
+                user=code.user,
+                client=code.client,
+                refreshable=self.refreshable)
+            scopes = code.scopes.all()
+            token.scopes.add(*scopes)
+            if self.authentication_method == constants.MAC:
+                token.mac_key = KeyGenerator(settings.MAC_KEY_LENGTH)()
+            token.save()
+            
+            code.delete()
+            
+            return self.grant_response(token, callback)
+            
+        # refresh_token, see 6. Refreshing an Access Token
+        elif grant_type == 'refresh_token':
+            try:
+                self.validate_refresh_token(request)
+            
+            except OAuth2Exception as e:
+                return self.error_response(e)
+            
+            self.access_token.token = KeyGenerator(settings.ACCESS_TOKEN_LENGTH)()
+            self.access_token.refresh_token = KeyGenerator(settings.REFRESH_TOKEN_LENGTH)()
+            self.access_token.expire = TimestampGenerator(settings.ACCESS_TOKEN_EXPIRATION)()
+            
+            access_ranges = Scope.objects.filter(key__in=self.scope) if self.scope else [] # TODO: fix
+            self.access_token.scope = access_ranges
+            
+            self.access_token.save()
+            
+            return self.access_token
         
-        self.code.delete()
+            return self.grant_response()
+            
+        # password, see 4.3.2. Access Token Request
+        elif grant_type == 'password':
+            try:
+                self.validate_password(request)
+            except OAuth2Exception as e:
+                return self.error_response(e)
+            
+            access_token = Token.objects.create(
+                user=self.user,
+                client=self.client,
+                refreshable=self.refreshable)
+            
+            if self.authentication_method == constants.MAC:
+                access_token.mac_key = KeyGenerator(settings.MAC_KEY_LENGTH)()
+            
+            access_ranges = Scope.objects.filter(key__in=self.scope) if self.scope else [] # TODO: fix
+            access_token.scope = access_ranges
+            
+            access_token.save()
+            
+            return access_token
+            return self.grant_response()
         
-        return access_token
-
-    def _get_password_token(self):
-        """Generate an access token after password authorization."""
-        access_token = Token.objects.create(
-            user=self.user,
-            client=self.client,
-            refreshable=self.refreshable)
+        # client_credentials, see 4.4.2. Access Token Request
+        elif grant_type == 'client_credentials':
+            try:
+                self.validate_client_credentials(request)
+            except OAuth2Exception as e:
+                return self.error_response(e)
+            
+            access_token = Token.objects.create(
+                user=self.client.user,
+                client=self.client,
+                refreshable=self.refreshable)
+            
+            if self.authentication_method == constants.MAC:
+                access_token.mac_key = KeyGenerator(settings.MAC_KEY_LENGTH)()
+            
+            access_ranges = Scope.objects.filter(key__in=self.scope) if self.scope else [] # TODO: fix
+            self.access_token.scope = access_ranges
+            
+            self.access_token.save()
+            
+            return self.access_token
         
-        if self.authentication_method == constants.MAC:
-            access_token.mac_key = KeyGenerator(settings.MAC_KEY_LENGTH)()
+            return self.grant_response()
+            
+        else:
+            raise InvalidGrantType('No such grant type: %s' % grant_type)
         
-        access_ranges = Scope.objects.filter(key__in=self.scope) if self.scope else [] # TODO: fix
-        access_token.scope = access_ranges
-        
-        access_token.save()
-        
-        return access_token
-
-    def _get_refresh_token(self):
-        """Generate an access token after refresh authorization."""
-        self.access_token.token = KeyGenerator(settings.ACCESS_TOKEN_LENGTH)()
-        self.access_token.refresh_token = KeyGenerator(settings.REFRESH_TOKEN_LENGTH)()
-        self.access_token.expire = TimestampGenerator(settings.ACCESS_TOKEN_EXPIRATION)()
-        
-        access_ranges = Scope.objects.filter(key__in=self.scope) if self.scope else [] # TODO: fix
-        self.access_token.scope = access_ranges
-        
-        self.access_token.save()
-        
-        return self.access_token
-
-    def _get_client_credentials_token(self):
-        """Generate an access token after client_credentials authorization."""
-        access_token = Token.objects.create(
-            user=self.client.user,
-            client=self.client,
-            refreshable=self.refreshable)
-        
-        if self.authentication_method == constants.MAC:
-            access_token.mac_key = KeyGenerator(settings.MAC_KEY_LENGTH)()
-        
-        access_ranges = Scope.objects.filter(key__in=self.scope) if self.scope else [] # TODO: fix
-        self.access_token.scope = access_ranges
-        
-        self.access_token.save()
-        
-        return self.access_token
