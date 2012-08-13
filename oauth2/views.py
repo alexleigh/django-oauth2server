@@ -5,7 +5,7 @@ from base64 import b64decode
 from django.http import HttpResponse, HttpResponseRedirect, absolute_http_url_re
 from django.template import RequestContext
 from django.shortcuts import render_to_response
-from django.contrib.auth import authenticate
+from django.contrib import auth
 from django.contrib.auth.decorators import login_required
 from django.views.decorators.csrf import csrf_exempt
 from django.views.generic import View
@@ -409,22 +409,29 @@ class TokenView(View):
         # authenticate client
         client = self.authenticate_client(request)
         
+        if client is None:
+            if self.requires_client_authentication:
+                raise InvalidClient('Client authentication failed')
+        
+        # check username and password
         username = request.POST.get('username')
         password = request.POST.get('password')
-        if 'scope' in request.POST:
-            scope = request.POST['scope']
-        
-        
-        if request['username'] is None:
-            raise AuthenticationFailed('No username')
-        
-        if request['password'] is None:
-            raise AuthenticationFailed('No password')
+        if username is None:
+            raise AuthenticationFailed('Missing required parameter: username')
+        if password is None:
+            raise AuthenticationFailed('Missing required parameter: password')
+        user = auth.authenticate(username=username, password=password)
+        if user is not None:
+            if not user.is_active:
+                raise AuthenticationFailed('Inactive user.')
+        else:
+            raise AuthenticationFailed('User authentication failed.')
         
         # check scope
+        scope = request.POST.get('scope')
         scopes = []
-        if 'scope' in query and query['scope'] is not None:
-            scope_names = set(query['scope'].split())
+        if scope is not None:
+            scope_names = set(scope.split())
             invalid_scope_names = []
             for scope_name in scope_names:
                 try:
@@ -439,20 +446,37 @@ class TokenView(View):
                 disallowed_scope_names = scope_names - allowed_scope_names
                 if len(disallowed_scope_names) > 0:
                     raise InvalidScope('The following scopes cannot be requested: %s' % ','.join(disallowed_scope_names))
+        
+        return (user, client, scopes)
 
-        user = authenticate(username=self.username, password=self.password)
-        
-        if user is not None:
-            if not user.is_active:
-                raise AuthenticationFailed('Inactive user.')
-        else:
-            raise AuthenticationFailed('User authentication failed.')
-        
-        self.user = user
-    
     def validate_client_credentials(self, request):
-        if 'scope' in request.POST:
-            scope = request.POST['scope']
+        # authenticate client
+        client = self.authenticate_client(request)
+        
+        if client is None:
+            raise InvalidClient('Client authentication failed')
+        
+        # check scope
+        scope = request.POST.get('scope')
+        scopes = []
+        if scope is not None:
+            scope_names = set(scope.split())
+            invalid_scope_names = []
+            for scope_name in scope_names:
+                try:
+                    scope = Scope.objects.get(name=scope_name)
+                    scopes.append(scope)
+                except Scope.DoesNotExist:
+                    invalid_scope_names.append(scope_name)
+            if len(invalid_scope_names) > 0:
+                raise InvalidScope('The following scopes do not exist: %s' % ', '.join(invalid_scope_names))
+            if self.allowed_scopes is not None:
+                allowed_scope_names = set(self.allowed_scopes.values_list('name', flat=True))
+                disallowed_scope_names = scope_names - allowed_scope_names
+                if len(disallowed_scope_names) > 0:
+                    raise InvalidScope('The following scopes cannot be requested: %s' % ','.join(disallowed_scope_names))
+        
+        return (client, scopes)
             
     def error_response(self, error, callback=None):
         context = {
@@ -551,49 +575,42 @@ class TokenView(View):
         # password, see 4.3.2. Access Token Request
         elif grant_type == 'password':
             try:
-                self.validate_password(request)
+                user, client, scopes = self.validate_password(request)
+                
             except OAuth2Exception as e:
-                return self.error_response(e)
+                return self.error_response(e, callback)
             
-            access_token = Token.objects.create(
-                user=self.user,
-                client=self.client,
-                refreshable=self.refreshable)
-            
+            token = Token.objects.create(
+                user=user,
+                client=client,
+                refreshable=self.refreshable
+            )
+            token.scopes.add(*scopes)
             if self.authentication_method == constants.MAC:
-                access_token.mac_key = KeyGenerator(settings.MAC_KEY_LENGTH)()
+                token.mac_key = KeyGenerator(settings.MAC_KEY_LENGTH)()
+            token.save()
             
-            access_ranges = Scope.objects.filter(key__in=self.scope) if self.scope else [] # TODO: fix
-            access_token.scope = access_ranges
-            
-            access_token.save()
-            
-            return access_token
-            return self.grant_response()
+            return self.grant_response(token, callback)
         
         # client_credentials, see 4.4.2. Access Token Request
         elif grant_type == 'client_credentials':
             try:
-                self.validate_client_credentials(request)
+                client, scopes = self.validate_client_credentials(request)
             except OAuth2Exception as e:
-                return self.error_response(e)
+                return self.error_response(e, callback)
             
-            access_token = Token.objects.create(
-                user=self.client.user,
-                client=self.client,
-                refreshable=self.refreshable)
-            
+            token = Token.objects.create(
+                # TODO: the user should be a user representing the client, not the client's owner.
+                user=client.owner,
+                client=client,
+                refreshable=self.refreshable
+            )
+            token.scopes.add(*scopes)
             if self.authentication_method == constants.MAC:
-                access_token.mac_key = KeyGenerator(settings.MAC_KEY_LENGTH)()
-            
-            access_ranges = Scope.objects.filter(key__in=self.scope) if self.scope else [] # TODO: fix
-            self.access_token.scope = access_ranges
-            
-            self.access_token.save()
-            
-            return self.access_token
+                token.mac_key = KeyGenerator(settings.MAC_KEY_LENGTH)()
+            token.save()
         
-            return self.grant_response()
+            return self.grant_response(token, callback)
             
         else:
             raise InvalidGrantType('No such grant type: %s' % grant_type)
