@@ -305,9 +305,9 @@ class TokenView(View):
         return super(TokenView, self).dispatch(*args, **kwargs)
     
     def authenticate_client(self, request):
-        client_id = request.POST.get('client_id'),
+        client_id = request.POST.get('client_id')
         client_secret = request.POST.get('client_secret')
-            
+        
         if 'HTTP_AUTHORIZATION' in request.META:
             auth_type, auth_value = request.META['HTTP_AUTHORIZATION'].split()[0:2]
             if auth_type.lower() == 'basic':
@@ -496,7 +496,7 @@ class TokenView(View):
 
     def post(self, request):
         # optional json callback
-        callback = request.POST.get('callback')
+        callback = request.REQUEST.get('callback')
         
         grant_type = request.POST.get('grant_type')
         
@@ -514,7 +514,8 @@ class TokenView(View):
             token = Token.objects.create(
                 user=code.user,
                 client=code.client,
-                refreshable=self.refreshable)
+                refreshable=self.refreshable
+            )
             scopes = code.scopes.all()
             token.scopes.add(*scopes)
             if self.authentication_method == constants.MAC:

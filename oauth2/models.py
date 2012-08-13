@@ -160,6 +160,7 @@ class Token(models.Model):
         default=KeyGenerator(REFRESH_TOKEN_LENGTH),
         unique=True,
         db_index=True,
+        null=True,
         blank=True
     )
     
@@ -168,6 +169,7 @@ class Token(models.Model):
         default=None,
         unique=True,
         db_index=True,
+        null=True,
         blank=True
     )
     
