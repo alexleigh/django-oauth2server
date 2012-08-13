@@ -27,9 +27,10 @@ log = logging.getLogger(__name__)
 
 class ClientAuthorizationView(View):
     '''
-    Client authorization. Validates access credentials and generates a response
-    with an authorization code passed as a parameter to the redirect URI, an
-    access token passed as a URI fragment to the redirect URI, or both.
+    Client authorization endpoint. Validates client access requests and
+    generates a response with an authorization code passed as a parameter to
+    the redirect URI, an access token passed as a URI fragment to the redirect
+    URI, or both.
 
     **Kwargs:**
     * *authentication_method:* Type of token to generate. Possible values are
@@ -272,13 +273,16 @@ class ClientAuthorizationView(View):
     
 class TokenView(View):
     '''
-    Token generation. Validates authorization codes, refresh tokens,
-    username/password pairs, and generates a JSON formatted response.
+    Token endpoint. Validates authorization codes, refresh tokens,
+    username/password pairs, or client credentials, and generates a JSON
+    formatted response.
 
     **Kwargs:**
     * *authentication_method:* Type of token to generate. Possible values are
       oauth2.constants.BEARER and oauth2.constants.MAC.
     * *refreshable:* Whether issued tokens are refreshable.
+    * *requires_client_authentication:* Whether client authentication is
+      required before issuing tokens.
     * *allowed_scopes:* An iterable of oauth2.models.Scope objects representing
       the scopes the token generator can grant. None means no limit, an empty
       list means the generator can only grant requests with no scopes.
