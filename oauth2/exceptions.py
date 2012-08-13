@@ -78,14 +78,7 @@ class InvalidGrant(OAuth2Exception):
     '''
     error = 'invalid_grant'
 
-class InvalidToken(OAuth2Exception):
-    '''
-    The access token provided is expired, revoked, malformed, or otherwise
-    invalid.
-    '''
-    error = 'invalid_token'
-
-class InvalidAccessRequest(OAuth2Exception):
+class InvalidRequest(OAuth2Exception):
     '''
     The request is missing a required parameter, includes an
     unsupported parameter or parameter value, repeats the same
@@ -93,7 +86,14 @@ class InvalidAccessRequest(OAuth2Exception):
     token, or is otherwise malformed.
     '''
     error = 'invalid_request'
-    
+
+class InvalidToken(OAuth2Exception):
+    '''
+    The access token provided is expired, revoked, malformed, or otherwise
+    invalid.
+    '''
+    error = 'invalid_token'
+
 class InsufficientScope(OAuth2Exception):
     '''
     The request requires more scopes than those provided by the access token.
