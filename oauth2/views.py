@@ -17,11 +17,7 @@ from .models import Client, Scope, Code, Token
 from .forms import AuthorizationForm
 from .utils import KeyGenerator, TimestampGenerator
 from .utils.uri import add_parameters, add_fragments, normalize
-from .exceptions import OAuth2Exception, OAuth2ClientException, OAuth2RedirectURIException
-from .exceptions import AccessDenied, AuthenticationFailed
-from .exceptions import InvalidClientId, InvalidClient, InvalidRedirectURI, RedirectURIMismatch
-from .exceptions import InvalidResponseType, InvalidScope
-from .exceptions import InvalidGrantType, InvalidGrant
+from .exceptions import *
 
 log = logging.getLogger(__name__)
 
@@ -79,37 +75,42 @@ class ClientAuthorizationView(View):
     def dispatch(self, *args, **kwargs):
         return super(ClientAuthorizationView, self).dispatch(*args, **kwargs)
     
-    def validate(self, query):
+    def validate(self, request):
+        client_id = request.GET.get('client_id')
+        redirect_uri = request.GET.get('redirect_uri')
+        response_type = request.GET.get('response_type')
+        scope = request.GET.get('scope')
+            
         # check client_id
         client = None
-        if query['client_id'] is None:
+        if client_id is None:
             raise InvalidClientId('Missing required parameter: client_id')
         try:
-            client = Client.objects.get(client_id=query['client_id'])
+            client = Client.objects.get(client_id=client_id)
         except Client.DoesNotExist:
-            raise InvalidClient('client_id %s doesn\'t exist' % query['client_id'])
+            raise InvalidClient('client_id %s doesn\'t exist' % client_id)
         
         # check redirect URI
-        if query['redirect_uri'] is None:
+        if redirect_uri is None:
             raise InvalidRedirectURI('Missing required parameter: redirect_uri')
         if client.redirect_uri is not None:
-            if normalize(query['redirect_uri']) != normalize(client.redirect_uri):
+            if normalize(redirect_uri) != normalize(client.redirect_uri):
                 raise RedirectURIMismatch('Registered redirect_uri doesn\'t match provided redirect_uri.')
-        if not absolute_http_url_re.match(query['redirect_uri']):
+        if not absolute_http_url_re.match(redirect_uri):
             raise InvalidRedirectURI('Absolute URI required for redirect_uri')
         
         # check response type
-        if query['response_type'] is None:
+        if response_type is None:
             raise InvalidResponseType('Missing required parameter: response_type')
-        if query['response_type'] not in ['code', 'token']:
-            raise InvalidResponseType('No such response type %s' % query['response_type'])
-        if self.allowed_response_type & self.RESPONSE_TYPES[query['response_type']] == 0:
-            raise InvalidResponseType('Response type %s not allowed.' % query['response_type'])
+        if response_type not in ['code', 'token']:
+            raise InvalidResponseType('No such response type %s' % response_type)
+        if self.allowed_response_type & self.RESPONSE_TYPES[response_type] == 0:
+            raise InvalidResponseType('Response type %s not allowed.' % response_type)
         
         # check scope
         scopes = []
-        if 'scope' in query and query['scope'] is not None:
-            scope_names = set(query['scope'].split())
+        if scope is not None:
+            scope_names = set(scope.split())
             invalid_scope_names = []
             for scope_name in scope_names:
                 try:
@@ -125,11 +126,10 @@ class ClientAuthorizationView(View):
                 if len(disallowed_scope_names) > 0:
                     raise InvalidScope('The following scopes cannot be requested: %s' % ','.join(disallowed_scope_names))
 
-        return (client, scopes)
+        return (client, redirect_uri, response_type, scopes)
     
-    def error_response(self, query, error):
+    def error_response(self, error):
         context = {
-            'query': query,
             'error': error.error,
             'error_description': u'%s' % error.message
         }
@@ -141,48 +141,49 @@ class ClientAuthorizationView(View):
             response.status_code = 400
         return response
     
-    def error_redirect(self, query, error):
+    def error_redirect(self, error, redirect_uri, state=None):
         parameters = {
             'error': error.error,
             'error_description': u'%s' % error.message
         }
     
-        if 'state' in query:
-            parameters['state'] = query['state']
+        if state is not None:
+            parameters['state'] = state
     
         if self.allowed_response_type & constants.CODE != 0:
-            redirect_uri = add_parameters(query['redirect_uri'], parameters)
+            redirect_uri = add_parameters(redirect_uri, parameters)
     
         if self.allowed_response_type & constants.TOKEN != 0:
-            redirect_uri = add_fragments(query['redirect_uri'], parameters)
+            redirect_uri = add_fragments(redirect_uri, parameters)
     
         return HttpResponseRedirect(redirect_uri)
     
     def get(self, request):
-        query = {
-            'client_id': request.GET.get('client_id'),
-            'response_type': request.GET.get('response_type'),
-            'redirect_uri': request.GET.get('redirect_uri')
-        }
-        
-        if 'scope' in request.GET:
-            query['scope'] = request.GET['scope']
-            
-        if 'state' in request.GET:
-            query['state'] = request.GET['state']
+        # optional state parameter
+        state = request.GET.get('state')
         
         try:
-            client, scopes = self.validate(query)
+            client, redirect_uri, response_type, scopes = self.validate(request)
         
         # do not redirect to requesting client for these errors
         except (OAuth2ClientException, OAuth2RedirectURIException) as e:
-            return self.error_response(query, e)
+            return self.error_response(e)
         
         # redirect to requesting client for other kinds of oauth2 errors
         except OAuth2Exception as e:
-            return self.error_redirect(query, e)
+            return self.error_redirect(e, state)
         
+        query = {
+            'client_id': client.client_id,
+            'response_type': response_type,
+            'redirect_uri': redirect_uri
+        }
+        if state is not None:
+            query['state'] = state
+        if len(scopes) > 0:
+            query['scope'] = ' '.join([ scope.name for scope in scopes ])
         form_action = '/oauth2/authorize/?%s' % urlencode(query)
+        
         context = {
             'client': client, 
             'scopes': scopes,
@@ -192,28 +193,19 @@ class ClientAuthorizationView(View):
         return render_to_response('oauth2/authorize.html', context, RequestContext(request))
 
     def post(self, request):
-        query = {
-            'client_id': request.GET.get('client_id'),
-            'response_type': request.GET.get('response_type'),
-            'redirect_uri': request.GET.get('redirect_uri')
-        }
-        
-        if 'scope' in request.GET:
-            query['scope'] = request.GET['scope']
-            
-        if 'state' in request.GET:
-            query['state'] = request.GET['state']
+        # optional state parameter
+        state = request.GET.get('state')
         
         try:
-            client, scopes = self.validate(query)
+            client, redirect_uri, response_type, scopes = self.validate(request)
             
         # do not redirect to requesting client for these errors
         except (OAuth2ClientException, OAuth2RedirectURIException) as e:
-            return self.error_response(query, e)
+            return self.error_response(e)
         
         # redirect to requesting client for other kinds of oauth2 errors
         except OAuth2Exception as e:
-            return self.error_redirect(query, e)
+            return self.error_redirect(e, redirect_uri, state)
         
         form = AuthorizationForm(request.POST)
         
@@ -222,19 +214,19 @@ class ClientAuthorizationView(View):
                 parameters = {}
                 fragments = {}
                 
-                if self.RESPONSE_TYPES[query['response_type']] & constants.CODE != 0:
+                if self.RESPONSE_TYPES[response_type] & constants.CODE != 0:
                     code = Code.objects.create(
-                        user=self.request.user,
+                        user=request.user,
                         client=client,
-                        redirect_uri=query['redirect_uri']
+                        redirect_uri=redirect_uri
                     )
                     code.scopes.add(*scopes)
                     code.save()
                     parameters['code'] = code.code
                 
-                if self.RESPONSE_TYPES[query['response_type']] & constants.TOKEN != 0:
+                if self.RESPONSE_TYPES[response_type] & constants.TOKEN != 0:
                     token = Token.objects.create(
-                        user=self.request.user,
+                        user=request.user,
                         client=client,
                         refreshable=self.REFRESHABLE
                     )
@@ -245,8 +237,8 @@ class ClientAuthorizationView(View):
                         fragments['refresh_token'] = token.refresh_token
                     fragments['expires_in'] = settings.ACCESS_TOKEN_EXPIRATION
                     
-                    if query['scope'] is not None:
-                        fragments['scope'] = query['scope']
+                    if len(scopes) > 0:
+                        fragments['scope'] = ' '.join([ scope.name for scope in scopes ])
                     
                     if self.authentication_method == constants.MAC:
                         token.mac_key = KeyGenerator(settings.MAC_KEY_LENGTH)()
@@ -259,17 +251,17 @@ class ClientAuthorizationView(View):
                     
                     token.save()
                 
-                if 'state' in query:
-                    parameters['state'] = query['state']
+                if state is not None:
+                    parameters['state'] = state
                 
-                redirect_uri = add_parameters(query['redirect_uri'], parameters)
+                redirect_uri = add_parameters(redirect_uri, parameters)
                 redirect_uri = add_fragments(redirect_uri, fragments)
                 return HttpResponseRedirect(redirect_uri)
             
             else:
-                return self.error_redirect(query, AccessDenied('Access denied'))
+                return self.error_redirect(AccessDenied('Access denied'), redirect_uri, state)
         
-        return self.error_response(query, OAuth2Exception('Unknown error'))
+        return self.error_response(OAuth2Exception('Unknown error'))
     
 class TokenView(View):
     '''
@@ -529,7 +521,7 @@ class TokenView(View):
         return response
 
     def post(self, request):
-        # optional json callback
+        # optional json callback parameter
         callback = request.REQUEST.get('callback')
         
         grant_type = request.POST.get('grant_type')
