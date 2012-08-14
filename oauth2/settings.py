@@ -37,7 +37,7 @@ MAC_KEY_LENGTH = getattr(_settings, 'OAUTH2_MAC_KEY_LENGTH', 20)
 REALM = getattr(_settings, 'OAUTH2_REALM', '')
 
 # Whether client authentication is required for the token endpoint
-REQUIRES_CLIENT_AUTHENTICATION = getattr(_settings, 'OAUTH2_REQUIRES_CLIENT_AUTHENTICATION', True)
+REQUIRES_CLIENT_AUTHENTICATION = getattr(_settings, 'OAUTH2_REQUIRES_CLIENT_AUTHENTICATION', False)
 
 # Type of response to generate
 ALLOWED_RESPONSE_TYPE = getattr(_settings, 'OAUTH2_ALLOWED_RESPONSE_TYPE', CODE)
