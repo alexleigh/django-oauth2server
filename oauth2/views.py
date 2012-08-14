@@ -128,23 +128,23 @@ class ClientAuthorizationView(View):
 
         return (client, redirect_uri, response_type, scopes)
     
-    def error_response(self, error):
+    def error_response(self, exception):
         context = {
-            'error': error.error,
-            'error_description': u'%s' % error.message
+            'error': exception.error,
+            'error_description': u'%s' % exception.message
         }
         
         response = render_to_response('oauth2/error.html', context, RequestContext(self.request))
-        if isinstance(error, InvalidClient):
+        if isinstance(exception, InvalidClient):
             response.status_code = 401
         else:
             response.status_code = 400
         return response
     
-    def error_redirect(self, error, redirect_uri, state=None):
+    def error_redirect(self, exception, redirect_uri, state=None):
         parameters = {
-            'error': error.error,
-            'error_description': u'%s' % error.message
+            'error': exception.error,
+            'error_description': u'%s' % exception.message
         }
     
         if state is not None:
@@ -380,10 +380,10 @@ class TokenView(View):
         
         # check scope
         scope = request.POST.get('scope')
-        scopes = []
         if scope is None:
             scopes = token.scopes.all()
         else:
+            scopes = []
             scope_names = set(scope.split())
             invalid_scope_names = []
             for scope_name in scope_names:
@@ -474,10 +474,10 @@ class TokenView(View):
         
         return (client, scopes)
             
-    def error_response(self, error, callback=None):
+    def error_response(self, exception, callback=None):
         context = {
-            'error': error.error,
-            'error_description': u'%s' % error.message
+            'error': exception.error,
+            'error_description': u'%s' % exception.message
         }
         
         if callback is not None:
@@ -486,7 +486,7 @@ class TokenView(View):
         
         else:
             response = HttpResponse(simplejson.dumps(context), content_type='application/json')
-            if isinstance(error, InvalidClient):
+            if isinstance(exception, InvalidClient):
                 response.status_code = 401
             else:
                 response.status_code = 400
@@ -521,7 +521,7 @@ class TokenView(View):
         return response
 
     def post(self, request):
-        # optional json callback parameter
+        # optional JSON callback parameter
         callback = request.REQUEST.get('callback')
         
         grant_type = request.POST.get('grant_type')
