@@ -3,6 +3,9 @@ from django.conf import settings as _settings
 from .constants import CODE, TOKEN, CODE_AND_TOKEN, BEARER, MAC
 from .exceptions import OAuth2Exception
 
+# URL prefix for OAuth2 endpoints.
+URL = getattr(_settings, 'OAUTH2_URL', '/oauth2/')
+
 # Length of the client key.
 CLIENT_ID_LENGTH = getattr(_settings, 'OAUTH2_CLIENT_ID_LENGTH', 30)
 

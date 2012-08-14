@@ -182,7 +182,7 @@ class ClientAuthorizationView(View):
             query['state'] = state
         if len(scopes) > 0:
             query['scope'] = ' '.join([ scope.name for scope in scopes ])
-        form_action = '/oauth2/authorize/?%s' % urlencode(query)
+        form_action = '%sauthorize/?%s' % (settings.URL, urlencode(query))
         
         context = {
             'client': client, 
