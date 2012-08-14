@@ -3,37 +3,40 @@ from django.conf import settings as _settings
 from .constants import CODE, TOKEN, CODE_AND_TOKEN, BEARER, MAC
 from .exceptions import OAuth2Exception
 
-# URL prefix for OAuth2 endpoints.
+# URL prefix for OAuth2 endpoints
 URL = getattr(_settings, 'OAUTH2_URL', '/oauth2/')
 
-# Length of the client key.
-CLIENT_ID_LENGTH = getattr(_settings, 'OAUTH2_CLIENT_ID_LENGTH', 30)
+# Tuple of (scope_name, description) tuples
+SCOPES = getattr(_settings, 'OAUTH2_SCOPES', ())
 
-# Length of the client secret.
-CLIENT_SECRET_LENGTH = getattr(_settings, 'OAUTH2_CLIENT_SECRET_LENGTH', 30)
-
-# Length of the scope.
+# Length of the scope name
 SCOPE_LENGTH = getattr(_settings, 'OAUTH2_SCOPE_LENGTH', 255)
 
-# Length of the authorization code.
+# Length of the client ID
+CLIENT_ID_LENGTH = getattr(_settings, 'OAUTH2_CLIENT_ID_LENGTH', 30)
+
+# Length of the client secret
+CLIENT_SECRET_LENGTH = getattr(_settings, 'OAUTH2_CLIENT_SECRET_LENGTH', 30)
+
+# Length of the authorization code
 CODE_LENGTH = getattr(_settings, 'OAUTH2_CODE_LENGTH', 30)
 
-# Number of seconds in which an authorization code should expire.
+# Number of seconds in which an authorization code should expire
 CODE_EXPIRATION = getattr(_settings, 'OAUTH2_CODE_EXPIRATION', 120)
 
-# Length of the access token.
+# Length of the access token
 ACCESS_TOKEN_LENGTH = getattr(_settings, 'OAUTH2_ACCESS_TOKEN_LENGTH', 20)
 
-# Number of seconds in which an access token should expire.
+# Number of seconds in which an access token should expire
 ACCESS_TOKEN_EXPIRATION = getattr(_settings, 'OAUTH2_ACCESS_TOKEN_EXPIRATION', 3600)
 
-# Length of the refresh token.
+# Length of the refresh token
 REFRESH_TOKEN_LENGTH = getattr(_settings, 'OAUTH2_REFRESH_TOKEN_LENGTH', 20)
 
-# Issue refreshable tokens.
+# Issue refreshable tokens
 REFRESHABLE = getattr(_settings, 'OAUTH2_REFRESHABLE', True)
 
-# Length of the MAC authentication key.
+# Length of the MAC authentication key
 MAC_KEY_LENGTH = getattr(_settings, 'OAUTH2_MAC_KEY_LENGTH', 20)
 
 # Authentication realm
@@ -54,3 +57,6 @@ AUTHENTICATION_METHOD = getattr(_settings, 'OAUTH2_AUTHENTICATION_METHOD', BEARE
 if AUTHENTICATION_METHOD not in [BEARER, MAC]:
     raise OAuth2Exception('Possible values for OAUTH2_AUTHENTICATION_METHOD '
         'are oauth2.constants.MAC and oauth2.constants.BEARER.')
+
+# scope needed for authentication using the OAuth2 backend
+AUTHENTICATION_SCOPE = getattr(_settings, 'OAUTH2_AUTHENTICATION_SCOPE', 'user_info')

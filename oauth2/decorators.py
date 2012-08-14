@@ -1,3 +1,5 @@
+# not implemented
+
 import functools, inspect
 
 def decorator(func):
