@@ -527,7 +527,10 @@ class TokenView(View):
         grant_type = request.POST.get('grant_type')
         
         if grant_type is None:
-            raise InvalidGrantType('Missing required parameter: grant_type')
+            return self.error_response(
+                InvalidGrantType('Missing required parameter: grant_type'),
+                callback
+            )
         
         # authorization_code, see 4.1.3. Access Token Request
         if grant_type == 'authorization_code':
@@ -609,5 +612,8 @@ class TokenView(View):
             return self.grant_response(token, callback)
             
         else:
-            raise InvalidGrantType('No such grant type: %s' % grant_type)
+            return self.error_response(
+                InvalidGrantType('No such grant type: %s' % grant_type),
+                callback
+            )
         
