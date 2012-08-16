@@ -1,6 +1,4 @@
-examples/mysite/env/
-examples/mysite/mysite.sqlite
-docs/_build/*
-.DS_Store
-oauth2app.egg-info/
 *.pyc
+examples/examplesite/env/
+examples/examplesite/examplesite.sqlite
+docs/_build/*

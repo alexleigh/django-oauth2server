@@ -15,7 +15,7 @@
 	<ul id="header">
 		{% if request.user.is_authenticated %}
 		<li><a href="/accounts/logout/">Logout</a></li>
-		<li><a href="/accounts/clients/">Your Clients</a></li>
+		<li><a href="/accounts/">My Apps</a></li>
 		{% else %} 
 		<li><a href="/accounts/login/">Login</a></li>
 		<li><a href="/accounts/signup/">Signup</a></li>

@@ -3,24 +3,12 @@
 {% block title %}Apps{% endblock %}
 
 {% block content %}
-<h1>Apps</h1>
-
-<div>
-    {% if apps %}
-        {% for app in apps %}
-        <p><a href="/apps/{{ app.name }}/">{{ app.name }}</a></p>
-        {% endfor %}
-    {% else %}
-    <p>There are no apps.</p>
-    {% endif %}
-</div>
-
 <h1>Django OAuth 2.0 Example Site</h1>
 
 <div class="content_container">
     <p>This example Django site implements OAuth 2.0 clients and servers.</p>
     
-    <p>Start by <a href="/accounts/signup/">signing up</a> then <a href="/accounts/apps/">creating a client</a>. Clients are applications that request authorization from users to access data on their behalf.</p>
+    <p>Start by <a href="/accounts/signup/">signing up</a> then <a href="/accounts/">creating a client</a>. Clients are applications that request authorization from users to access data on their behalf.</p>
     
     {% if request.user.is_authenticated %}
     <p>The following account data is available to authorized clients at the specified endpoint URI:</p>
@@ -42,7 +30,15 @@
         </tr>
     </table>
     
-    {% if clients %}
+    {% if apps %}
+        {% for app in apps %}
+        <p><a href="/apps/{{ app.name }}/">{{ app.name }}</a></p>
+        {% endfor %}
+    {% else %}
+    <p>There are no apps.</p>
+    {% endif %}
+    
+    {% if apps %}
     <p>Authorize the clients at the various scopes:</p>
     <table class="data">
             <tr>
@@ -84,7 +80,7 @@
         {% endfor %}
     </table>
     {% else %}
-    <p>You have no clients. <a href="/account/clients">Create one</a> to demo authorization.</p>
+    <p>There are no apps. <a href="/account/clients">Create one</a> to demo authorization.</p>
     {% endif %}
     
     {% if access_tokens %}

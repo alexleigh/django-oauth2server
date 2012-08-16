@@ -32,12 +32,12 @@
         {% endfor %}
     </table>
     {% else %}
-    <p>You have no clients. Use the form below to create a client.</p>
+    <p>You have no apps. Use the form below to create an app.</p>
     {% endif %}
 </div>
 
 <div>
-    <h1>Create a new client</h1>
+    <h1>Create a new app</h1>
     <form method="post" class="form-inline">
         {{ form|crispy }}
         <input type="submit" value="Create" class="btn btn-primary btn-fixed-width" />

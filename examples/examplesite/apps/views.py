@@ -8,13 +8,13 @@ from oauth2.models import Client, Scope, Token, Code
 def index(request):
     template = {}
     if request.user.is_authenticated():
-        clients = Client.objects.filter(owner=request.user)
+        apps = Client.objects.filter(owner=request.user)
         access_tokens = Token.objects.filter(user=request.user)
         access_tokens = access_tokens.select_related()
         template["access_tokens"] = access_tokens
-        template["clients"] = clients
+        template["apps"] = apps
     return render_to_response(
-        'accounts/index.html', 
+        'apps/index.html', 
         template, 
         RequestContext(request))
 
