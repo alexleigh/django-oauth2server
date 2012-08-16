@@ -6,16 +6,16 @@ from django.template import RequestContext
 from oauth2.models import Client, Scope, Token, Code
 
 def index(request):
-    template = {}
+    context = {
+        'apps': Client.objects.all()
+    }
+    
     if request.user.is_authenticated():
-        apps = Client.objects.filter(owner=request.user)
-        access_tokens = Token.objects.filter(user=request.user)
-        access_tokens = access_tokens.select_related()
-        template["access_tokens"] = access_tokens
-        template["apps"] = apps
+        context['tokens'] = Token.objects.filter(user=request.user).select_related()
+        
     return render_to_response(
         'apps/index.html', 
-        template, 
+        context, 
         RequestContext(request))
 
 def app(request, app_name):

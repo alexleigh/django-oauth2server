@@ -15,7 +15,7 @@
         </tr>
         {% for client in clients %}
         <tr>
-            <td rowspan="2"><a href="/apps/{{ client.client_id }}">{{ client.name }}</td>
+            <td rowspan="2"><a href="/apps/{{ client.name }}">{{ client.name }}</td>
             <td class="right">Client ID:</td>
             <td class="left">{{ client.client_id }}</td>
             <td rowspan="2">
@@ -38,7 +38,7 @@
 
 <div>
     <h1>Create a new app</h1>
-    <form method="post" class="form-inline">
+    <form method="post" class="form-inline">{% csrf_token %}
         {{ form|crispy }}
         <input type="submit" value="Create" class="btn btn-primary btn-fixed-width" />
     </form>

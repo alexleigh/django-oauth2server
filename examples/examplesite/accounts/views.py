@@ -13,15 +13,16 @@ def index(request):
     if request.method == 'POST':
         form = ClientCreationForm(request.POST)
         remove_form = ClientDeletionForm(request.POST)
+        
         if form.is_valid():
-            if request.user.get_profile().is_dev:
-                Client.objects.create(
-                    name=form.cleaned_data['name'],
-                    description=form.cleaned_data['description'],
-                    redirect_uri=form.cleaned_data['redirect_uri'],
-                    client_profile=form.cleaned_data['client_profile'],
-                    owner=request.user
-                )
+            Client.objects.create(
+                name=form.cleaned_data['name'],
+                description=form.cleaned_data['description'],
+                redirect_uri=form.cleaned_data['redirect_uri'],
+                client_profile=form.cleaned_data['client_profile'],
+                owner=request.user
+            )
+        
         elif remove_form.is_valid():
             # TODO: make sure client belongs to user
             Client.objects.filter(client_id=remove_form.cleaned_data['client_id']).delete()
@@ -46,25 +47,22 @@ def login(request):
         form = LoginForm(request.POST)
         if form.is_valid():
             user = auth.authenticate(
-                    username=form.cleaned_data["username"],
-                    password=form.cleaned_data["password"])
+                username=form.cleaned_data["username"],
+                password=form.cleaned_data["password"])
             auth.login(request, user)
             return HttpResponseRedirect("/")
+    
     else:
         form = LoginForm()
+    
     template = {"form":form}
-    return render_to_response(
-        'accounts/login.html', 
-        template, 
-        RequestContext(request))
+    
+    return render_to_response('accounts/login.html', template, RequestContext(request))
 
 @login_required    
 def logout(request):
     auth.logout(request)
-    return render_to_response(
-        'accounts/logout.html', 
-        {}, 
-        RequestContext(request))
+    return render_to_response('accounts/logout.html', {}, RequestContext(request))
 
 def signup(request):
     if request.method == "POST":
