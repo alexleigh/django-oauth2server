@@ -10,7 +10,7 @@ class ClientCreationForm(forms.Form):
     name = forms.CharField(label='Name', max_length=255)
     description = forms.CharField(label='Description', max_length=255)
     redirect_uri = forms.URLField(label='Redirect URI', max_length=255)
-    client_type = forms.ChoiceField(label='Client type', choices=Client.CLIENT_TYPE)
+    client_profile = forms.ChoiceField(label='Client type', choices=Client.CLIENT_PROFILE)
 
 class ClientDeletionForm(forms.Form):
     client_id = forms.CharField(max_length=CLIENT_ID_LENGTH)

@@ -5,7 +5,6 @@ from . import api
 
 urlpatterns = patterns('',
     (r'^$', views.index),
-    (r'^apps/$', views.apps),
     
     (r'^login/?$', views.login),
     (r'^logout/?$', views.logout),

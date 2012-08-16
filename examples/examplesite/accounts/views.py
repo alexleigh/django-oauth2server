@@ -5,21 +5,41 @@ from django.contrib import auth
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
 
-from oauth2.models import Client, Token
+from oauth2.models import Client
 from .forms import SignupForm, LoginForm, ClientCreationForm, ClientDeletionForm
 
+@login_required
 def index(request):
-    template = {}
-    if request.user.is_authenticated():
-        clients = Client.objects.filter(owner=request.user)
-        access_tokens = Token.objects.filter(user=request.user)
-        access_tokens = access_tokens.select_related()
-        template["access_tokens"] = access_tokens
-        template["clients"] = clients
+    if request.method == 'POST':
+        form = ClientCreationForm(request.POST)
+        remove_form = ClientDeletionForm(request.POST)
+        if form.is_valid():
+            if request.user.get_profile().is_dev:
+                Client.objects.create(
+                    name=form.cleaned_data['name'],
+                    description=form.cleaned_data['description'],
+                    redirect_uri=form.cleaned_data['redirect_uri'],
+                    client_profile=form.cleaned_data['client_profile'],
+                    owner=request.user
+                )
+        elif remove_form.is_valid():
+            # TODO: make sure client belongs to user
+            Client.objects.filter(client_id=remove_form.cleaned_data['client_id']).delete()
+            form = ClientCreationForm()
+
+    else:
+        form = ClientCreationForm()
+
+    context = {
+        'form': form, 
+        'clients': Client.objects.filter(owner=request.user)
+    }
+
     return render_to_response(
         'accounts/index.html', 
-        template, 
-        RequestContext(request))
+        context, 
+        RequestContext(request)
+    )
 
 def login(request):
     if request.method == "POST":
@@ -67,35 +87,3 @@ def signup(request):
         template, 
         RequestContext(request))
 
-@login_required
-def apps(request):
-    if request.method == 'POST':
-        form = ClientCreationForm(request.POST)
-        remove_form = ClientDeletionForm(request.POST)
-        if form.is_valid():
-            if request.user.get_profile().is_dev:
-                Client.objects.create(
-                    name=form.cleaned_data['name'],
-                    description=form.cleaned_data['description'],
-                    redirect_uri=form.cleaned_data['redirect_uri'],
-                    client_type=form.cleaned_data['client_type'],
-                    owner=request.user
-                )
-        elif remove_form.is_valid():
-            # TODO: make sure client belongs to user
-            Client.objects.filter(client_id=remove_form.cleaned_data['client_id']).delete()
-            form = ClientCreationForm()
-
-    else:
-        form = ClientCreationForm()
-
-    context = {
-        'form': form, 
-        'clients': Client.objects.filter(owner=request.user)
-    }
-
-    return render_to_response(
-        'accounts/apps.html', 
-        context, 
-        RequestContext(request)
-    )
