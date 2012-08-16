@@ -16,11 +16,13 @@ class Client(models.Model):
     **Kwargs:**
     * *client_id:* A string representing the client id. *Default 30 character
       random string*
-    * *client_secret:* A string representing the client secret. *Default 30 character
-      random string*
+    * *client_secret:* A string representing the client secret. *Default 30
+      character random string*
     * *redirect_uri:* A string representing the client redirect_uri.
       *Default None*
-    * *client_type:* A string representing the client type. *Default web*
+    * *client_profile:* A string representing the client profile. *Default web*
+    * *client_type:* A string representing the client type. Usually inferred
+      from the client_profile, but can be overridden.
     * *name:* A string representing the client name.
     * *description:* A string representing the client description.
       *Default None*
@@ -42,15 +44,35 @@ class Client(models.Model):
         blank=True
     )
     
-    CLIENT_TYPE = Choices(
+    CLIENT_PROFILE = Choices(
+        # application running on a web server, can keep secrets
         ('web', 'Web application'),
+        # application running inside a user-agent (e.g. JavaScript running
+        # inside a browser), cannot keep secrets
+        ('agent', 'User-agent application'),
+        # native application installed on a device, cannot keep secrets
         ('installed', 'Installed application'),
-        ('service', 'Service account'),
+        # service application that does not access user data, can keep secrets
+        ('service', 'Service application')
+    )
+    client_profile = models.CharField(
+        max_length=20,
+        choices=CLIENT_PROFILE,
+        default=CLIENT_PROFILE.web
+    )
+    
+    CLIENT_TYPE = Choices(
+        # public applications cannot keep secrets
+        ('public', 'Public'),
+        # confidential applications can keep secrets
+        ('confidential', 'Confidential'),
+        # privileged applications can access user data without authorization
+        # from the user, use with caution
+        ('privileged', 'Privileged')
     )
     client_type = models.CharField(
         max_length=20,
-        choices=CLIENT_TYPE,
-        default=CLIENT_TYPE.web
+        choices=CLIENT_TYPE
     )
     
     redirect_uri = models.URLField(null=True)
@@ -202,3 +224,5 @@ class Nonce(models.Model):
     nonce = models.CharField(max_length=30, db_index=True)
     
     token = models.ForeignKey(Token)
+
+from .receivers import *

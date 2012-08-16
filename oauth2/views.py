@@ -283,7 +283,6 @@ class TokenView(View):
     
     authentication_method = settings.AUTHENTICATION_METHOD
     refreshable = settings.REFRESHABLE
-    requires_client_authentication = settings.REQUIRES_CLIENT_AUTHENTICATION
     allowed_scopes=None
     
     def __init__(self, **kwargs):
@@ -326,15 +325,15 @@ class TokenView(View):
         client = self.authenticate_client(request)
         
         if client is None:
-            if self.requires_client_authentication:
-                raise InvalidClient('Client authentication failed')
-            
             # if the client is not authenticating, the client_id is required, per 4.1.3.
             client_id = request.POST.get('client_id')
             if client_id is None:
                 raise InvalidClientId('Missing required parameter: client_id')
             try:
                 client = Client.objects.get(client_id=client_id)
+                # only public clients can bypass authentication
+                if client.client_type != Client.CLIENT_TYPE.public:
+                    raise InvalidClient('Client authentication failed')
             except Client.DoesNotExist:
                 raise InvalidClient('client_id %s doesn\'t exist' % client_id)
         
@@ -360,13 +359,6 @@ class TokenView(View):
         return code
         
     def validate_refresh_token(self, request):
-        # authenticate client
-        client = self.authenticate_client(request)
-        
-        if client is None:
-            if self.requires_client_authentication:
-                raise InvalidClient('Client authentication failed')
-            
         # check refresh token
         refresh_token = request.POST.get('refresh_token')
         if refresh_token is None:
@@ -377,6 +369,16 @@ class TokenView(View):
             raise InvalidGrant('No such refresh token: %s' % refresh_token)
         if not token.refreshable:
             raise InvalidGrant('Access token is not refreshable.')
+        
+        # check client
+        token_client = token.client
+        client = self.authenticate_client(request)
+        if client is None:
+            # only public clients can bypass authentication
+            if token_client.client_type != Client.CLIENT_TYPE.public:
+                raise InvalidClient('Client authentication failed.')
+        elif client != token_client:
+            raise InvalidClient('Requesting client does not match authorized client.')
         
         # check scope
         scope = request.POST.get('scope')
@@ -406,8 +408,16 @@ class TokenView(View):
         client = self.authenticate_client(request)
         
         if client is None:
-            if self.requires_client_authentication:
-                raise InvalidClient('Client authentication failed')
+            client_id = request.POST.get('client_id')
+            if client_id is None:
+                raise InvalidClientId('Missing required parameter: client_id')
+            try:
+                client = Client.objects.get(client_id=client_id)
+                # only public clients can bypass authentication
+                if client.client_type != Client.CLIENT_TYPE.public:
+                    raise InvalidClient('Client authentication failed')
+            except Client.DoesNotExist:
+                raise InvalidClient('client_id %s doesn\'t exist' % client_id)
         
         # check username and password
         username = request.POST.get('username')

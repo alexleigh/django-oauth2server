@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+
+{% block title %}{{ app.name }}{% endblock %}
+
+{% block content %}
+
+<h1>{{ app.name }}</h1>
+
+{% if error_description %}
+<div class="error_container">
+    <p>{{ error_description }}</p>
+</div>
+{% endif %}
+
+<div>
+    {% if codes %}
+    <p>This app has been issued the following authorization codes.</p>
+    <table class="data">
+        <tr>
+            <th>Code</th>
+            <th>Scope</th>
+            <th>Expire</th>
+            <th>Request access token</th>
+        </tr>
+        {% for code in codes %}
+        <tr>
+            <td>{{ code.code }}</td>
+            <td>
+                {% for scope in code.scopes.all %}
+                    {{ scope.name }}
+                {% endfor %}
+            </td>
+            <td>{{ code.expire }}</td>
+            <td>
+                <form method="post" action="/oauth2/token/" class="request">
+                    <input type="hidden" name="grant_type" value="authorization_code" />
+                    <input type="hidden" name="code" value="{{ code.code }}" />
+                    <input type="hidden" name="redirect_uri" value="{{ code.redirect_uri }}" />
+                    <input type="hidden" name="client_id" value="{{ code.client.client_id }}" />
+                    <input type="submit" value="Request" class="btn" />
+                </form>
+            </td>
+        </tr>
+        {% endfor %}
+    </table>
+    {% else %}
+    <p>This app has no authorization codes.</p>
+    {% endif %}
+    <br/>
+    {% if tokens %}
+    <p>This app has been issued the following access tokens.</p>
+    <table class="data">
+        <tr>
+            <th>Token</th>
+            <th>Refresh Token</th>
+            <th>Expire</th>
+            <th>Scope</th>
+            <th>Refreshable</th>
+            <th>Refresh access token</th>
+            {% for resource in resources %}
+            <th>{{ resource.name }}</th>
+            {% endfor %}
+        </tr>
+        {% for token in tokens %}
+        <tr>
+            <td>{{ token.access_token }}</td>
+            <td>{{ token.refresh_token }}</td>
+            <td>{{ token.expire }}</td>
+            <td>
+                {% for scope in token.scopes.all %}
+                    {{ scope.name }}
+                {% endfor %}
+            </td>
+            <td>{{ token.refreshable }}</td>
+            <td>
+                <form method="post" action="/oauth2/token/" class="request">
+                    <input type="hidden" name="grant_type" value="refresh_token" />
+                    <input type="hidden" name="refresh_token" value="{{ token.refresh_token }}" />
+                    <input type="hidden" name="client_id" value="{{ token.client.client_id }}" />
+                    <input type="hidden" name="scope" value="{% for scope in token.scopes.all %}{{ scope.name }} {% endfor %}" />
+                    <input type="submit" value="Refresh" class="btn" />
+                </form>
+            </td>
+            {% for resource in resources %}
+            <td><a href="{{ resource.endpoint }}" class="authenticate btn" id="_{{ token.access_token }}">Request</a></td>
+            {% endfor %}
+        </tr>
+        {% endfor %}
+    </table>
+    {% else %}
+    <p>This app has no access tokens.</p>
+    {% endif %}
+    <br/>
+    <p>The following scopes are available:</p>
+    <table class="data">
+        <tr>
+            {% for scope in scopes %}
+            <th>{{ scope.description }}</th>
+            {% endfor %}
+        </tr>
+        <tr>
+            {% for scope in scopes %}
+            <td>{{ scope.name }}</td>
+            {% endfor %}
+        </tr>
+    </table>
+    <br/>
+    <p>Request the user to authorize the application:</p>
+    <form method="get" action="/oauth2/authorize/">
+        <input type="text" name="scope" value="" placeholder="scope" />
+        <input type="hidden" name="redirect_uri" value="http://localhost:8000/testapps/{{ app.name }}/" />
+        <input type="hidden" name="response_type" value="code" />
+        <input type="hidden" name="client_id" value="{{app.client_id}}" />
+        <input type="submit" value="Submit" class="btn" />
+    </form>
+    <p>Request an access token directly using the user's credentials:</p>
+    <form method="post" action="/oauth2/token/" class="request">
+        <input type="text" name="username" value="" placeholder="username" />
+        <input type="password" name="password" value="" placeholder="password" />
+        <input type="text" name="scope" value="" placeholder="scope" />
+        <input type="hidden" name="grant_type" value="password" />
+        <input type="hidden" name="redirect_uri" value="http://localhost:8000/testapps/{{ app.name }}/" />
+        <input type="hidden" name="client_id" value="{{ app.client_id }}" />
+        <input type="submit" value="Submit" class="btn" />
+    </form>
+
+    <script type="text/javascript">
+        $(document).ready(function(){
+            $('a.authenticate').click(function(e) {
+                e.preventDefault();
+                var token = this.id.replace("_", "");
+                $.ajax({
+                    url: this.href,
+                    dataType: "jsonp",
+                    beforeSend: function(xhr){
+                        xhr.setRequestHeader("Authorization", "Bearer " + token)
+                    },
+                    success: function(data) {
+                        var response = [];
+                        for(key in data){
+                            response.push(key + ":" + data[key]);
+                        }
+                        alert(JSON.stringify(data));
+                    },
+                });
+            });
+            $('form.request').submit(function(e) {
+                e.preventDefault();
+                var values = {};
+                $.each($(this).serializeArray(), function(i, field) {
+                    values[field.name] = field.value;
+                });
+                $.ajax({
+                    url: this.action,
+                    type: "POST",
+                    data: values,
+                    dataType: "jsonp",
+                    beforeSend: function(xhr){
+                        xhr.setRequestHeader("Authorization", "{{ basic_auth }}")
+                    },
+                    success: function(data) {window.location.reload();}
+                });
+            });
+        });
+    </script>
+</div>
+{% endblock %}

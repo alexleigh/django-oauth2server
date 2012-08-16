@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+
+{% block title %}Request for Permission{% endblock %}
+
+{% block content %}
+<h3><b>{{ client.name }}</b> is requesting access to {% if access_ranges %}the following parts of{% endif %} your account:</h3>
+
+<div>
+    {% if scopes %}
+    <table class="data">
+        <tr>
+            <th>Name</th>
+            <th>Description</th>
+        </tr>
+        {% for scope in scopes %}
+        <tr>
+            <td>{{ scope.name }}</td>
+            <td>{{ scope.description }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+    {% endif %}
+</div>
+
+<div>
+    <form method="post" action="{{ form_action }}">
+        {{ form }}
+        <input type="submit" name="authorize" value="Allow access" class="btn btn-primary" />
+        <input type="submit" name="authorize" value="Deny access" class="btn" />
+    </form>
+</div>
+{% endblock %}

@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+
+{% block title %}Apps{% endblock %}
+
+{% block content %}
+<h1>Apps</h1>
+
+<div>
+    {% if apps %}
+        {% for app in apps %}
+        <p><a href="/apps/{{ app.name }}/">{{ app.name }}</a></p>
+        {% endfor %}
+    {% else %}
+    <p>There are no apps.</p>
+    {% endif %}
+</div>
+{% endblock %}
