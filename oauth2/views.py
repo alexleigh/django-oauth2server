@@ -63,6 +63,7 @@ class ClientAuthorizationView(View):
         if self.allowed_response_type not in [
             constants.CODE,
             constants.TOKEN,
+            constants.SECURE_TOKEN,
             constants.CODE_AND_TOKEN
         ]:
             raise OAuth2Exception(
@@ -102,7 +103,7 @@ class ClientAuthorizationView(View):
         # check response type
         if response_type is None:
             raise InvalidResponseType('Missing required parameter: response_type')
-        if response_type not in ['code', 'token']:
+        if response_type not in ['code', 'token', 'secure_token']:
             raise InvalidResponseType('No such response type %s' % response_type)
         if self.allowed_response_type & self.RESPONSE_TYPES[response_type] == 0:
             raise InvalidResponseType('Response type %s not allowed.' % response_type)
@@ -173,6 +174,9 @@ class ClientAuthorizationView(View):
         except OAuth2Exception as e:
             return self.error_redirect(e, state)
         
+        # TODO: rather than passing back the query parameters, it would be more
+        # secure to store the query server-side and pass back an encrypted
+        # string encoding the query which will be posted back to this endpoint
         query = {
             'client_id': client.client_id,
             'response_type': response_type,
@@ -251,6 +255,39 @@ class ClientAuthorizationView(View):
                     
                     token.save()
                 
+                if self.RESPONSE_TYPES[response_type] & constants.SECURE_TOKEN != 0:
+                    token = Token.objects.create(
+                        user=request.user,
+                        client=client,
+                        refreshable=self.REFRESHABLE
+                    )
+                    token.scopes.add(*scopes)
+                    
+                    context = {
+                        'access_token': token.access_token,
+                        'expires_in': settings.ACCESS_TOKEN_EXPIRATION
+                    }
+                    
+                    if self.authentication_method == constants.MAC:
+                        token.mac_key = KeyGenerator(settings.MAC_KEY_LENGTH)()
+                        context['token_type'] = 'mac'
+                        context['mac_key'] = token.mac_key
+                        context['mac_algorithm'] = 'hmac-sha-256'
+                    
+                    elif self.authentication_method == constants.BEARER:
+                        context['token_type'] = 'bearer'
+                    
+                    if token.refreshable:
+                        context['refresh_token'] = token.refresh_token
+                    
+                    if len(scopes) > 0:
+                        context['scope'] = ' '.join(set(token.scopes.values_list('name', flat=True)))
+
+                    # TODO: encode and encrypt secure_token
+                    fragments['secure_token'] = simplejson.dumps(context)
+                    
+                    token.save()
+                
                 if state is not None:
                     parameters['state'] = state
                 
@@ -325,7 +362,7 @@ class TokenView(View):
         client = self.authenticate_client(request)
         
         if client is None:
-            # if the client is not authenticating, the client_id is required, per 4.1.3.
+            # If the client is not authenticating, the client_id is required, per 4.1.3.
             client_id = request.POST.get('client_id')
             if client_id is None:
                 raise InvalidClientId('Missing required parameter: client_id')
@@ -408,16 +445,20 @@ class TokenView(View):
         client = self.authenticate_client(request)
         
         if client is None:
+            secure = request.POST.get('secure', False)
+            if not secure:
+                # client_secret can only be omitted if requesting a secure token
+                raise InvalidClientId('Missing required parameter: client_secret')
             client_id = request.POST.get('client_id')
             if client_id is None:
                 raise InvalidClientId('Missing required parameter: client_id')
             try:
                 client = Client.objects.get(client_id=client_id)
-                # only public clients can bypass authentication
-                if client.client_type != Client.CLIENT_TYPE.public:
-                    raise InvalidClient('Client authentication failed')
             except Client.DoesNotExist:
                 raise InvalidClient('client_id %s doesn\'t exist' % client_id)
+        if client.client_type != Client.CLIENT_TYPE.privileged:
+            # only privileged clients can use the password flow
+            raise InvalidGrantType('The client is not authorized to use this grant type')
         
         # check username and password
         username = request.POST.get('username')
@@ -502,7 +543,7 @@ class TokenView(View):
                 response.status_code = 400
             return response
 
-    def grant_response(self, token, callback=None):
+    def grant_response(self, token, callback=None, secure=False):
         context = {
             'access_token': token.access_token,
             'expires_in': settings.ACCESS_TOKEN_EXPIRATION
@@ -522,7 +563,14 @@ class TokenView(View):
         if token.scopes is not None:
             context['scope'] = ' '.join(set(token.scopes.values_list('name', flat=True)))
         
-        json_context = simplejson.dumps(context)
+        if secure:
+            # TODO: encode and encrypt json_context to form secure_token
+            json_context = {
+                'secure_token': simplejson.dumps(context)
+            }
+        else:
+            json_context = simplejson.dumps(context)
+            
         if callback is not None:
             json_context = '%s(%s);' % (callback, json_context)
         
@@ -533,6 +581,9 @@ class TokenView(View):
     def post(self, request):
         # optional JSON callback parameter
         callback = request.REQUEST.get('callback')
+        
+        # optional secure parameter for requesting secure tokens
+        secure = request.POST.get('secure', False)
         
         grant_type = request.POST.get('grant_type')
         
@@ -563,7 +614,7 @@ class TokenView(View):
             
             code.delete()
             
-            return self.grant_response(token, callback)
+            return self.grant_response(token, callback, secure)
             
         # refresh_token, see 6. Refreshing an Access Token
         elif grant_type == 'refresh_token':
@@ -579,7 +630,7 @@ class TokenView(View):
             token.scopes = [ scope.id for scope in scopes ]
             token.save()
         
-            return self.grant_response(token, callback)
+            return self.grant_response(token, callback, secure)
             
         # password, see 4.3.2. Access Token Request
         elif grant_type == 'password':
@@ -599,7 +650,7 @@ class TokenView(View):
                 token.mac_key = KeyGenerator(settings.MAC_KEY_LENGTH)()
             token.save()
             
-            return self.grant_response(token, callback)
+            return self.grant_response(token, callback, secure)
         
         # client_credentials, see 4.4.2. Access Token Request
         elif grant_type == 'client_credentials':
@@ -619,7 +670,7 @@ class TokenView(View):
                 token.mac_key = KeyGenerator(settings.MAC_KEY_LENGTH)()
             token.save()
         
-            return self.grant_response(token, callback)
+            return self.grant_response(token, callback, secure)
             
         else:
             return self.error_response(
