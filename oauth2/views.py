@@ -1,6 +1,8 @@
 import logging
 from urllib import urlencode
-from base64 import b64decode
+from base64 import b64encode, b64decode
+from Crypto.Cipher import AES
+from Crypto import Random
 
 from django.http import HttpResponse, HttpResponseRedirect, absolute_http_url_re
 from django.template import RequestContext
@@ -283,8 +285,11 @@ class ClientAuthorizationView(View):
                     if len(scopes) > 0:
                         context['scope'] = ' '.join(set(token.scopes.values_list('name', flat=True)))
 
-                    # TODO: encode and encrypt secure_token
-                    fragments['secure_token'] = simplejson.dumps(context)
+                    key = token.client.client_secret[:32]
+                    iv = Random.new().read(AES.block_size)
+                    cipher = AES.new(key, AES.MODE_CFB, iv)
+                    secure_token = b64encode(iv + cipher.encrypt(simplejson.dumps(context)))
+                    fragments['secure_token'] = secure_token
                     
                     token.save()
                 
@@ -445,10 +450,6 @@ class TokenView(View):
         client = self.authenticate_client(request)
         
         if client is None:
-            secure = request.POST.get('secure', False)
-            if not secure:
-                # client_secret can only be omitted if requesting a secure token
-                raise InvalidClientId('Missing required parameter: client_secret')
             client_id = request.POST.get('client_id')
             if client_id is None:
                 raise InvalidClientId('Missing required parameter: client_id')
@@ -456,6 +457,10 @@ class TokenView(View):
                 client = Client.objects.get(client_id=client_id)
             except Client.DoesNotExist:
                 raise InvalidClient('client_id %s doesn\'t exist' % client_id)
+            secure = request.POST.get('secure', False)
+            if not secure:
+                # client_secret can only be omitted if requesting a secure token
+                raise InvalidClient('Client authentication failed')
         if client.client_type != Client.CLIENT_TYPE.privileged:
             # only privileged clients can use the password flow
             raise InvalidGrantType('The client is not authorized to use this grant type')
@@ -564,12 +569,15 @@ class TokenView(View):
             context['scope'] = ' '.join(set(token.scopes.values_list('name', flat=True)))
         
         if secure:
-            # TODO: encode and encrypt json_context to form secure_token
-            json_context = {
-                'secure_token': simplejson.dumps(context)
+            key = token.client.client_secret[:32]
+            iv = Random.new().read(AES.block_size)
+            cipher = AES.new(key, AES.MODE_CFB, iv)
+            secure_token = b64encode(iv + cipher.encrypt(simplejson.dumps(context)))
+            context = {
+                'secure_token': secure_token
             }
-        else:
-            json_context = simplejson.dumps(context)
+        
+        json_context = simplejson.dumps(context)
             
         if callback is not None:
             json_context = '%s(%s);' % (callback, json_context)

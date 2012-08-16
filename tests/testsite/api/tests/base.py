@@ -2,7 +2,7 @@
 
 import json
 from django.contrib.auth.models import User
-from oauth2app.models import Client
+from oauth2.models import Client
 from django.test.client import Client as DjangoTestClient
 from django.utils import unittest
 from base64 import b64encode

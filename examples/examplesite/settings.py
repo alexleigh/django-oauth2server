@@ -107,6 +107,6 @@ LOGIN_URL = '/accounts/login/'
 OAUTH2_URL = '/oauth2/'
 
 OAUTH2_SCOPES = (
-    ('user_info', 'View basic information about your account'),
-    ('user_profile', 'View and edit your account profile'),
+    ('date_joined', 'Date joined'),
+    ('last_login', 'Last login'),
 )

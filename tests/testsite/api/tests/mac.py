@@ -6,7 +6,7 @@ from urlparse import urlparse, parse_qs
 from urllib import urlencode
 from django.utils import unittest
 from django.contrib.auth.models import User
-from oauth2app.models import Client
+from oauth2.models import Client
 from django.test.client import Client as DjangoTestClient
 
 

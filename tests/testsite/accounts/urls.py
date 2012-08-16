@@ -1,7 +1,6 @@
-#-*- coding: utf-8 -*-
-from django.conf.urls.defaults import patterns, url
-from oauth2app.token import TokenGenerator
-from oauth2app.consts import MAC
+from django.conf.urls.defaults import patterns
+from oauth2.views import TokenView
+from oauth2.constants import MAC
 
 urlpatterns = patterns('',
         (r'^missing_redirect_uri/?$',           'testsite.apps.oauth2.views.missing_redirect_uri'),
@@ -16,6 +15,6 @@ urlpatterns = patterns('',
         (r'^authorize_token_mac/?$',            'testsite.apps.oauth2.views.authorize_token_mac'),
         (r'^authorize_code_and_token/?$',       'testsite.apps.oauth2.views.authorize_code_and_token'),
         (r'^token/?$',                          'oauth2app.token.handler'),
-        (r'^token_mac/?$',                      TokenGenerator(authentication_method=MAC))
+        (r'^token_mac/?$',                      TokenView(authentication_method=MAC))
 )
 

@@ -83,6 +83,9 @@ class Client(models.Model):
     
     owner = models.ForeignKey(User, null=True, blank=True)
 
+    def __unicode__(self):
+        return u'Client id: %s, name: %s, description: %s, profile: %s, type: %s' % (self.client_id, self.name, self.description, self.client_profile, self.client_type)
+    
 class Scope(models.Model):
     '''
     Stores scope data.

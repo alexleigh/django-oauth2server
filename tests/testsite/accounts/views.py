@@ -1,12 +1,10 @@
-#-*- coding: utf-8 -*-
-
-
 from django.http import HttpResponseRedirect, HttpResponse
 from django.contrib.auth.decorators import login_required
-from oauth2app.authorize import Authorizer, MissingRedirectURI, AuthorizationException
-from oauth2app.authorize import UnvalidatedRequest, UnauthenticatedUser
-from oauth2app.models import AccessRange
-from oauth2app.consts import MAC, CODE, TOKEN, CODE_AND_TOKEN
+
+from oauth2.views import ClientAuthorizationView
+from oauth2.exceptions import UnvalidatedRequest, UnauthenticatedUser, AuthorizationException, MissingRedirectURI
+from oauth2.models import Scope
+from oauth2.constants import MAC, CODE, TOKEN, CODE_AND_TOKEN
 
 
 @login_required
@@ -33,7 +31,7 @@ def authorize_mac(request):
 
 @login_required
 def authorize_first_name(request):
-    scope = AccessRange.objects.get(key="first_name")
+    scope = Scope.objects.get(key="first_name")
     authorizer = Authorizer(scope=scope)
     try:
         return authorizer(request)
@@ -43,7 +41,7 @@ def authorize_first_name(request):
 
 @login_required
 def authorize_first_and_last_name(request):
-    scope = AccessRange.objects.filter(key__in=["first_name", "last_name"])
+    scope = Scope.objects.filter(key__in=["first_name", "last_name"])
     authorizer = Authorizer(scope=scope)
     try:
         return authorizer(request)
@@ -53,7 +51,7 @@ def authorize_first_and_last_name(request):
 
 @login_required
 def authorize_last_name(request):
-    scope = AccessRange.objects.get(key="last_name")
+    scope = Scope.objects.get(key="last_name")
     authorizer = Authorizer(scope=scope)
     try:
         return authorizer(request)

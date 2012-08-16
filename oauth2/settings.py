@@ -13,31 +13,31 @@ SCOPES = getattr(_settings, 'OAUTH2_SCOPES', ())
 SCOPE_LENGTH = getattr(_settings, 'OAUTH2_SCOPE_LENGTH', 255)
 
 # Length of the client ID
-CLIENT_ID_LENGTH = getattr(_settings, 'OAUTH2_CLIENT_ID_LENGTH', 30)
+CLIENT_ID_LENGTH = getattr(_settings, 'OAUTH2_CLIENT_ID_LENGTH', 32)
 
-# Length of the client secret
-CLIENT_SECRET_LENGTH = getattr(_settings, 'OAUTH2_CLIENT_SECRET_LENGTH', 30)
+# Length of the client secret, must be at least 32
+CLIENT_SECRET_LENGTH = getattr(_settings, 'OAUTH2_CLIENT_SECRET_LENGTH', 32)
 
 # Length of the authorization code
-CODE_LENGTH = getattr(_settings, 'OAUTH2_CODE_LENGTH', 30)
+CODE_LENGTH = getattr(_settings, 'OAUTH2_CODE_LENGTH', 32)
 
 # Number of seconds in which an authorization code should expire
 CODE_EXPIRATION = getattr(_settings, 'OAUTH2_CODE_EXPIRATION', 120)
 
 # Length of the access token
-ACCESS_TOKEN_LENGTH = getattr(_settings, 'OAUTH2_ACCESS_TOKEN_LENGTH', 20)
+ACCESS_TOKEN_LENGTH = getattr(_settings, 'OAUTH2_ACCESS_TOKEN_LENGTH', 24)
 
 # Number of seconds in which an access token should expire
 ACCESS_TOKEN_EXPIRATION = getattr(_settings, 'OAUTH2_ACCESS_TOKEN_EXPIRATION', 3600)
 
 # Length of the refresh token
-REFRESH_TOKEN_LENGTH = getattr(_settings, 'OAUTH2_REFRESH_TOKEN_LENGTH', 20)
+REFRESH_TOKEN_LENGTH = getattr(_settings, 'OAUTH2_REFRESH_TOKEN_LENGTH', 24)
 
 # Issue refreshable tokens
 REFRESHABLE = getattr(_settings, 'OAUTH2_REFRESHABLE', True)
 
 # Length of the MAC authentication key
-MAC_KEY_LENGTH = getattr(_settings, 'OAUTH2_MAC_KEY_LENGTH', 20)
+MAC_KEY_LENGTH = getattr(_settings, 'OAUTH2_MAC_KEY_LENGTH', 24)
 
 # Authentication realm
 REALM = getattr(_settings, 'OAUTH2_REALM', '')

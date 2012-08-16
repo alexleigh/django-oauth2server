@@ -36,52 +36,52 @@ def index(request):
         'clients': Client.objects.filter(owner=request.user)
     }
 
-    return render_to_response(
-        'accounts/index.html', 
-        context, 
-        RequestContext(request)
-    )
+    return render_to_response('accounts/index.html', context, RequestContext(request))
 
 def login(request):
-    if request.method == "POST":
+    if request.method == 'POST':
         form = LoginForm(request.POST)
         if form.is_valid():
             user = auth.authenticate(
-                username=form.cleaned_data["username"],
-                password=form.cleaned_data["password"])
+                username=form.cleaned_data['username'],
+                password=form.cleaned_data['password']
+            )
             auth.login(request, user)
-            return HttpResponseRedirect("/")
+            return HttpResponseRedirect('/')
     
     else:
         form = LoginForm()
     
-    template = {"form":form}
+    context = {
+        'form': form
+    }
     
-    return render_to_response('accounts/login.html', template, RequestContext(request))
+    return render_to_response('accounts/login.html', context, RequestContext(request))
 
-@login_required    
 def logout(request):
     auth.logout(request)
     return render_to_response('accounts/logout.html', {}, RequestContext(request))
 
 def signup(request):
-    if request.method == "POST":
+    if request.method == 'POST':
         form = SignupForm(request.POST)
         if form.is_valid():
             user = User.objects.create_user(
-                    form.cleaned_data["username"],
-                    form.cleaned_data["email"],
-                    form.cleaned_data["password1"],)
+                form.cleaned_data['username'],
+                form.cleaned_data['email'],
+                form.cleaned_data['password1'],
+            )
             user = auth.authenticate(
-                    username=form.cleaned_data["username"],
-                    password=form.cleaned_data["password1"])
+                username=form.cleaned_data['username'],
+                password=form.cleaned_data['password1']
+            )
             auth.login(request, user)
-            return HttpResponseRedirect("/")
+            return HttpResponseRedirect('/')
     else:
         form = SignupForm()
-    template = {"form":form}
-    return render_to_response(
-        'accounts/signup.html', 
-        template, 
-        RequestContext(request))
-
+    
+    context = {
+        'form': form
+    }
+    
+    return render_to_response('accounts/signup.html', context, RequestContext(request))
