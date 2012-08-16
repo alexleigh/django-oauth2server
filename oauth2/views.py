@@ -45,7 +45,8 @@ class ClientAuthorizationView(View):
 
     RESPONSE_TYPES = {
         'code': constants.CODE,
-        'token': constants.TOKEN
+        'token': constants.TOKEN,
+        'secure_token': constants.SECURE_TOKEN
     }
     authentication_method = settings.AUTHENTICATION_METHOD
     refreshable = settings.REFRESHABLE
@@ -61,17 +62,18 @@ class ClientAuthorizationView(View):
                 'Possible values for authentication_method are '
                 'oauth2.constants.BEARER and oauth2.constants.MAC.'
             )
-        
         if self.allowed_response_type not in [
             constants.CODE,
             constants.TOKEN,
             constants.SECURE_TOKEN,
-            constants.CODE_AND_TOKEN
+            constants.CODE | constants.TOKEN,
+            constants.CODE | constants.SECURE_TOKEN,
+            constants.TOKEN | constants.SECURE_TOKEN,
+            constants.CODE | constants.TOKEN | constants.SECURE_TOKEN
         ]:
-            raise OAuth2Exception(
-                'Possible values for allowed_response_type are '
-                'oauth2.constants.CODE, oauth2.constants.TOKEN, '
-                'and oauth2.constants.CODE_AND_TOKEN.'
+            raise OAuth2Exception('Possible values for OAUTH2_ALLOWED_RESPONSE_TYPE '
+                'are oauth2.constants.CODE, oauth2.constants.TOKEN, '
+                'oauth2.constants.SECURE_TOKEN, and their unions thereof.'
             )
 
     @method_decorator(login_required)
@@ -109,6 +111,10 @@ class ClientAuthorizationView(View):
             raise InvalidResponseType('No such response type %s' % response_type)
         if self.allowed_response_type & self.RESPONSE_TYPES[response_type] == 0:
             raise InvalidResponseType('Response type %s not allowed.' % response_type)
+        if self.RESPONSE_TYPES[response_type] & constants.TOKEN != 0:
+            if client.client_type != 'public':
+                # only public clients can request tokens without authenticating
+                raise InvalidResponseType('Response type token not allowed for this client')
         
         # check scope
         scopes = []
@@ -174,7 +180,8 @@ class ClientAuthorizationView(View):
         
         # redirect to requesting client for other kinds of oauth2 errors
         except OAuth2Exception as e:
-            return self.error_redirect(e, state)
+            redirect_uri = request.GET.get('redirect_uri')
+            return self.error_redirect(e, redirect_uri, state)
         
         # TODO: rather than passing back the query parameters, it would be more
         # secure to store the query server-side and pass back an encrypted
@@ -211,6 +218,7 @@ class ClientAuthorizationView(View):
         
         # redirect to requesting client for other kinds of oauth2 errors
         except OAuth2Exception as e:
+            redirect_uri = request.GET.get('redirect_uri')
             return self.error_redirect(e, redirect_uri, state)
         
         form = AuthorizationForm(request.POST)
@@ -234,7 +242,7 @@ class ClientAuthorizationView(View):
                     token = Token.objects.create(
                         user=request.user,
                         client=client,
-                        refreshable=self.REFRESHABLE
+                        refreshable=self.refreshable
                     )
                     token.scopes.add(*scopes)
                     
@@ -261,7 +269,7 @@ class ClientAuthorizationView(View):
                     token = Token.objects.create(
                         user=request.user,
                         client=client,
-                        refreshable=self.REFRESHABLE
+                        refreshable=self.refreshable
                     )
                     token.scopes.add(*scopes)
                     
@@ -373,9 +381,11 @@ class TokenView(View):
                 raise InvalidClientId('Missing required parameter: client_id')
             try:
                 client = Client.objects.get(client_id=client_id)
-                # only public clients can bypass authentication
                 if client.client_type != Client.CLIENT_TYPE.public:
-                    raise InvalidClient('Client authentication failed')
+                    secure = request.POST.get('secure', False)
+                    if not secure:
+                        # only public clients can bypass authentication when requesting an unsecured token
+                        raise InvalidClient('Client authentication failed')
             except Client.DoesNotExist:
                 raise InvalidClient('client_id %s doesn\'t exist' % client_id)
         
@@ -416,9 +426,11 @@ class TokenView(View):
         token_client = token.client
         client = self.authenticate_client(request)
         if client is None:
-            # only public clients can bypass authentication
             if token_client.client_type != Client.CLIENT_TYPE.public:
-                raise InvalidClient('Client authentication failed.')
+                secure = request.POST.get('secure', False)
+                if not secure:
+                    # only public clients can bypass authentication when requesting an unsecured token
+                    raise InvalidClient('Client authentication failed')
         elif client != token_client:
             raise InvalidClient('Requesting client does not match authorized client.')
         
