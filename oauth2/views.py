@@ -1,10 +1,11 @@
 import logging
+import re
 from urllib import urlencode
 from base64 import b64encode, b64decode
 from Crypto.Cipher import AES
 from Crypto import Random
 
-from django.http import HttpResponse, HttpResponseRedirect, absolute_http_url_re
+from django.http import HttpResponse, HttpResponseRedirect
 from django.template import RequestContext
 from django.shortcuts import render_to_response
 from django.contrib import auth
@@ -101,6 +102,7 @@ class ClientAuthorizationView(View):
         if client.redirect_uri is not None:
             if normalize(redirect_uri) != normalize(client.redirect_uri):
                 raise RedirectURIMismatch('Registered redirect_uri doesn\'t match provided redirect_uri.')
+        absolute_http_url_re = re.compile(r"^https?://", re.I)
         if not absolute_http_url_re.match(redirect_uri):
             raise InvalidRedirectURI('Absolute URI required for redirect_uri')
         
